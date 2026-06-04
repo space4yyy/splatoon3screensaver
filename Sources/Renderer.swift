@@ -47,6 +47,7 @@ final class SplatoonRenderer: NSObject {
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
     private var sampler: MTLSamplerState!
+    private var library: MTLLibrary?
     private var bufferA: MTLTexture?
     private var bufferB: MTLTexture?
     private var bufferCRead: MTLTexture?
@@ -199,12 +200,16 @@ final class SplatoonRenderer: NSObject {
     private var bufferHeight: Int { Int(360.0 * CGFloat(settings.renderScale)) }
 
     private func buildResources() {
-        guard let url = resourceURL(name: "default", extension: "metallib"),
-              let library = try? device.makeLibrary(URL: url)
-        else {
-            DebugLog.write("failed to load default.metallib")
-            return
+        if library == nil {
+            guard let url = resourceURL(name: "default", extension: "metallib"),
+                  let lib = try? device.makeLibrary(URL: url)
+            else {
+                DebugLog.write("failed to load default.metallib")
+                return
+            }
+            self.library = lib
         }
+        guard let library = self.library else { return }
 
         // 1. Offscreen passes (.rgba32Float format)
         let offscreenNames = ["passA", "passB", "passC", "passD"]
