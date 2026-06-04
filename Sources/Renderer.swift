@@ -1,6 +1,7 @@
 import Foundation
 import Metal
 import MetalKit
+import QuartzCore
 
 private struct ShaderUniforms {
     var resolution: SIMD4<Float>
@@ -32,7 +33,7 @@ enum DebugLog {
     }
 }
 
-final class SplatoonRenderer: NSObject, MTKViewDelegate {
+final class SplatoonRenderer: NSObject {
     enum SettingsSource {
         case screenSaverDefaults
         case fixed(ScreensaverSettings)
@@ -40,7 +41,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue
-    private weak var view: MTKView?
+    private weak var metalLayer: CAMetalLayer?
     private let settingsSource: SettingsSource
     private let waitForFrameCompletion: Bool
 
@@ -63,14 +64,15 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
     private var resolvedPaletteMode: Int = 0
 
     init?(
-        view: MTKView,
+        layer: CAMetalLayer,
+        device: MTLDevice,
         settingsSource: SettingsSource = .screenSaverDefaults,
         waitForFrameCompletion: Bool = false
     ) {
-        guard let queue = view.device?.makeCommandQueue() else { return nil }
-        self.device = view.device!
+        guard let queue = device.makeCommandQueue() else { return nil }
+        self.device = device
         self.queue = queue
-        self.view = view
+        self.metalLayer = layer
         self.settingsSource = settingsSource
         self.waitForFrameCompletion = waitForFrameCompletion
         switch settingsSource {
@@ -80,12 +82,10 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             self.settings = settings
         }
         super.init()
-        DebugLog.reset()
-        DebugLog.write("renderer init waitForFrameCompletion=\(waitForFrameCompletion)")
-        view.delegate = self
+        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] init waitForFrameCompletion=\(waitForFrameCompletion)")
         buildResources()
         bubbleMask = makeBubbleMaskTexture()
-        DebugLog.write("bubbleMaskLoaded=\(bubbleMask != nil)")
+        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] bubbleMaskLoaded=\(bubbleMask != nil)")
         reloadSettings(resetSimulation: true)
     }
 
@@ -95,11 +95,6 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             settings = ScreensaverSettings.load()
         case .fixed(let fixed):
             settings = fixed
-        }
-        if settings.fpsCap == 0 {
-            view?.preferredFramesPerSecond = 0
-        } else {
-            view?.preferredFramesPerSecond = settings.fpsCap
         }
         if resetSimulation {
             frame = 0
@@ -120,27 +115,27 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         }
         
         buildResources()
-        DebugLog.write("reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode) resolvedPalette=\(resolvedPaletteMode)")
+        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode) resolvedPalette=\(resolvedPaletteMode)")
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+    func handleResize(to size: CGSize) {
         lastDrawableSize = size
         recreateTextures()
     }
 
-    func draw(in view: MTKView) {
-        guard let drawable = view.currentDrawable,
-              let descriptor = view.currentRenderPassDescriptor,
+    func draw() {
+        guard let metalLayer = self.metalLayer,
+              let drawable = metalLayer.nextDrawable(),
               let commandBuffer = queue.makeCommandBuffer()
         else {
             if loggedDrawFrames < 20 {
-                DebugLog.write("draw skipped drawable=\(view.currentDrawable != nil) descriptor=\(view.currentRenderPassDescriptor != nil)")
+                DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] draw skipped layer=\(self.metalLayer != nil)")
                 loggedDrawFrames += 1
             }
             return
         }
 
-        if texturesNeedResize(for: view.drawableSize) {
+        if texturesNeedResize(for: metalLayer.drawableSize) {
             recreateTextures()
         }
 
@@ -158,12 +153,15 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             state: SIMD4(frame, Int32(resolvedPaletteMode), 0, 0)
         )
         if loggedDrawFrames < 20 {
-            DebugLog.write("draw frame=\(frame) drawableSize=\(view.drawableSize) bounds=\(view.bounds) buffer=\(bufferWidth)x\(bufferHeight)")
+            DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] draw frame=\(frame) drawableSize=\(metalLayer.drawableSize) bounds=\(metalLayer.bounds) buffer=\(bufferWidth)x\(bufferHeight)")
             loggedDrawFrames += 1
         }
 
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = drawable.texture
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        descriptor.colorAttachments[0].storeAction = .store
 
         encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
         encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
@@ -178,7 +176,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             DebugLog.write("missing drawable encoder")
             return
         }
-        uniforms.resolution = SIMD4(Float(view.drawableSize.width), Float(view.drawableSize.height), 1.0, settings.renderScale)
+        uniforms.resolution = SIMD4(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height), 1.0, settings.renderScale)
         encoder.setRenderPipelineState(imagePipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
         encoder.setFragmentTexture(bufferCWrite, index: 0)
@@ -265,7 +263,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         bufferCWrite = device.makeTexture(descriptor: descriptor)
         bufferDRead = device.makeTexture(descriptor: descriptor)
         bufferDWrite = device.makeTexture(descriptor: descriptor)
-        lastDrawableSize = view?.drawableSize ?? .zero
+        lastDrawableSize = metalLayer?.drawableSize ?? .zero
         clearTextures()
     }
 
