@@ -33,19 +33,6 @@ enum DebugLog {
 }
 
 final class SplatoonRenderer: NSObject, MTKViewDelegate {
-    enum RenderStage {
-        case solid
-        case gradient
-        case bubbleResource
-        case bufferDConstant
-        case bufferDBubbleCopy
-        case bufferD
-        case bufferA
-        case bufferB
-        case bufferC
-        case shadertoy
-    }
-
     enum SettingsSource {
         case screenSaverDefaults
         case fixed(ScreensaverSettings)
@@ -55,7 +42,6 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     private weak var view: MTKView?
     private let settingsSource: SettingsSource
-    private let renderStage: RenderStage
     private let waitForFrameCompletion: Bool
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
@@ -78,7 +64,6 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
     init?(
         view: MTKView,
         settingsSource: SettingsSource = .screenSaverDefaults,
-        renderStage: RenderStage = .shadertoy,
         waitForFrameCompletion: Bool = false
     ) {
         guard let queue = view.device?.makeCommandQueue() else { return nil }
@@ -86,7 +71,6 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         self.queue = queue
         self.view = view
         self.settingsSource = settingsSource
-        self.renderStage = renderStage
         self.waitForFrameCompletion = waitForFrameCompletion
         switch settingsSource {
         case .screenSaverDefaults:
@@ -124,7 +108,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             recreateTextures()
         }
         buildResources()
-        DebugLog.write("reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode) debug=\(settings.debugView)")
+        DebugLog.write("reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode)")
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -159,91 +143,34 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             mouse: SIMD4<Float>(0, 0, 0, 0),
             customWarm: SIMD4(settings.customWarm.float3, delta),
             customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(settings.paletteMode), Int32(settings.debugView), 0)
+            state: SIMD4(frame, Int32(settings.paletteMode), 0, 0)
         )
         if loggedDrawFrames < 20 {
-            DebugLog.write("draw frame=\(frame) drawableSize=\(view.drawableSize) bounds=\(view.bounds) buffer=\(bufferWidth)x\(bufferHeight) stage=\(renderStage) debug=\(settings.debugView)")
+            DebugLog.write("draw frame=\(frame) drawableSize=\(view.drawableSize) bounds=\(view.bounds) buffer=\(bufferWidth)x\(bufferHeight)")
             loggedDrawFrames += 1
         }
 
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        let imagePipelineName: String
-        var shouldSwapC = false
-        var shouldSwapD = false
-        switch renderStage {
-        case .solid:
-            imagePipelineName = "solidPass"
-        case .gradient:
-            imagePipelineName = "gradientPass"
-        case .bubbleResource:
-            imagePipelineName = "directBubbleResourcePass"
-        case .bufferDConstant:
-            encodeOffscreen("passDConstant", target: bufferDWrite, input0: nil, uniforms: &uniforms, commandBuffer: commandBuffer)
-            imagePipelineName = "debugDTexturePass"
-        case .bufferDBubbleCopy:
-            encodeOffscreen("passDBubbleCopy", target: bufferDWrite, input0: nil, uniforms: &uniforms, commandBuffer: commandBuffer)
-            imagePipelineName = "debugDTexturePass"
-        case .bufferD:
-            encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            shouldSwapD = true
-            imagePipelineName = "debugDTexturePass"
-        case .bufferA:
-            encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            imagePipelineName = "debugATexturePass"
-        case .bufferB:
-            encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
-            imagePipelineName = "debugATexturePass"
-        case .bufferC:
-            encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passC", target: bufferCWrite, input0: bufferB, uniforms: &uniforms, commandBuffer: commandBuffer)
-            shouldSwapC = true
-            imagePipelineName = "debugDyePass"
-        case .shadertoy:
-            encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passC", target: bufferCWrite, input0: bufferB, uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-            shouldSwapC = true
-            shouldSwapD = true
-            switch settings.debugView {
-            case 1: imagePipelineName = "debugDyePass"
-            case 2: imagePipelineName = "debugBubblePass"
-            default: imagePipelineName = "imagePass"
-            }
-        }
+        encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
+        encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
+        encodeOffscreen("passC", target: bufferCWrite, input0: bufferB, uniforms: &uniforms, commandBuffer: commandBuffer)
+        encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
 
-        guard let imagePipeline = pipelines[imagePipelineName] else {
-            DebugLog.write("missing image pipeline \(imagePipelineName)")
+        guard let imagePipeline = pipelines["imagePass"] else {
+            DebugLog.write("missing image pipeline imagePass")
             return
         }
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            DebugLog.write("missing drawable encoder for \(imagePipelineName)")
+            DebugLog.write("missing drawable encoder")
             return
         }
         uniforms.resolution = SIMD4(Float(view.drawableSize.width), Float(view.drawableSize.height), 1.0, settings.renderScale)
         encoder.setRenderPipelineState(imagePipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
-        switch renderStage {
-        case .bubbleResource:
-            encoder.setFragmentTexture(bubbleMask, index: 1)
-        case .bufferDConstant, .bufferDBubbleCopy, .bufferD:
-            encoder.setFragmentTexture(bufferDWrite, index: 2)
-        case .bufferA:
-            encoder.setFragmentTexture(bufferA, index: 0)
-        case .bufferB:
-            encoder.setFragmentTexture(bufferB, index: 0)
-        case .bufferC:
-            encoder.setFragmentTexture(bufferCWrite, index: 0)
-        case .shadertoy:
-            encoder.setFragmentTexture(bufferCWrite, index: 0)
-            encoder.setFragmentTexture(bufferDWrite, index: 2)
-        default:
-            break
-        }
+        encoder.setFragmentTexture(bufferCWrite, index: 0)
+        encoder.setFragmentTexture(bufferDWrite, index: 2)
         encoder.setFragmentSamplerState(sampler, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
@@ -252,57 +179,14 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
         if waitForFrameCompletion {
             commandBuffer.waitUntilCompleted()
-            if shouldSwapC {
-                swap(&bufferCRead, &bufferCWrite)
-            }
-            if shouldSwapD {
-                swap(&bufferDRead, &bufferDWrite)
-            }
-        } else {
-            if shouldSwapC {
-                swap(&bufferCRead, &bufferCWrite)
-            }
-            if shouldSwapD {
-                swap(&bufferDRead, &bufferDWrite)
-            }
         }
+        swap(&bufferCRead, &bufferCWrite)
+        swap(&bufferDRead, &bufferDWrite)
         frame += 1
     }
 
     private var bufferWidth: Int { Int(640.0 * CGFloat(settings.renderScale)) }
     private var bufferHeight: Int { Int(360.0 * CGFloat(settings.renderScale)) }
-
-    private func requiredPipelineNames() -> [String] {
-        var names: [String] = []
-        switch renderStage {
-        case .solid:
-            names = ["solidPass"]
-        case .gradient:
-            names = ["gradientPass"]
-        case .bubbleResource:
-            names = ["directBubbleResourcePass"]
-        case .bufferDConstant:
-            names = ["passDConstant", "debugDTexturePass"]
-        case .bufferDBubbleCopy:
-            names = ["passDBubbleCopy", "debugDTexturePass"]
-        case .bufferD:
-            names = ["passD", "debugDTexturePass"]
-        case .bufferA:
-            names = ["passA", "debugATexturePass"]
-        case .bufferB:
-            names = ["passA", "passB", "debugATexturePass"]
-        case .bufferC:
-            names = ["passA", "passB", "passC", "debugDyePass"]
-        case .shadertoy:
-            names = ["passA", "passB", "passC", "passD"]
-            switch settings.debugView {
-            case 1: names.append("debugDyePass")
-            case 2: names.append("debugBubblePass")
-            default: names.append("imagePass")
-            }
-        }
-        return names
-    }
 
     private func buildResources() {
         guard let url = resourceURL(name: "default", extension: "metallib"),
@@ -312,12 +196,9 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        let needed = requiredPipelineNames()
-        DebugLog.write("buildResources needed=\(needed)")
-
         // 1. Offscreen passes (.rgba32Float format)
-        let offscreenNames = ["passA", "passB", "passC", "passD", "passDConstant", "passDBubbleCopy"]
-        let neededOffscreen = needed.filter { offscreenNames.contains($0) && pipelines[$0] == nil }
+        let offscreenNames = ["passA", "passB", "passC", "passD"]
+        let neededOffscreen = offscreenNames.filter { pipelines[$0] == nil }
         if !neededOffscreen.isEmpty {
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction = library.makeFunction(name: "fullscreenVertex")
@@ -326,7 +207,6 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
                 descriptor.fragmentFunction = library.makeFunction(name: name)
                 do {
                     pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
-                    DebugLog.write("compiled offscreen pipeline: \(name)")
                 } catch {
                     DebugLog.write("failed pipeline \(name): \(error)")
                 }
@@ -334,23 +214,17 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         }
 
         // 2. Image passes (.bgra8Unorm format)
-        let imageNames = ["solidPass", "gradientPass", "directBubbleResourcePass", "debugDTexturePass", "debugATexturePass", "imagePass", "debugDyePass", "debugBubblePass"]
-        let neededImage = needed.filter { imageNames.contains($0) && pipelines[$0] == nil }
-        if !neededImage.isEmpty {
+        if pipelines["imagePass"] == nil {
             let imageDescriptor = MTLRenderPipelineDescriptor()
             imageDescriptor.vertexFunction = library.makeFunction(name: "fullscreenVertex")
             imageDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-            for name in neededImage {
-                imageDescriptor.fragmentFunction = library.makeFunction(name: name)
-                do {
-                    pipelines[name] = try device.makeRenderPipelineState(descriptor: imageDescriptor)
-                    DebugLog.write("compiled image pipeline: \(name)")
-                } catch {
-                    DebugLog.write("failed image pipeline \(name): \(error)")
-                }
+            imageDescriptor.fragmentFunction = library.makeFunction(name: "imagePass")
+            do {
+                pipelines["imagePass"] = try device.makeRenderPipelineState(descriptor: imageDescriptor)
+            } catch {
+                DebugLog.write("failed image pipeline imagePass: \(error)")
             }
         }
-        DebugLog.write("pipeline count=\(pipelines.count)")
 
         if sampler == nil {
             let samplerDescriptor = MTLSamplerDescriptor()
@@ -427,7 +301,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
         encoder.setFragmentTexture(input0, index: 0)
-        if pipelineName == "passD" || pipelineName == "passDBubbleCopy" {
+        if pipelineName == "passD" {
             encoder.setFragmentTexture(bubbleMask, index: 1)
         }
         encoder.setFragmentSamplerState(sampler, index: 0)

@@ -7,7 +7,6 @@ struct ScreensaverSettings {
     var fpsCap: Int
     var renderScale: Float
     var paletteMode: Int
-    var debugView: Int
     var customWarm: NSColor
     var customCool: NSColor
 
@@ -17,7 +16,6 @@ struct ScreensaverSettings {
             "fpsCap": 60,
             "renderScale": 1.0,
             "paletteMode": 0,
-            "debugView": 0,
             "customWarm": "#BAFF0A",
             "customCool": "#1D0AFF"
         ])
@@ -30,7 +28,6 @@ struct ScreensaverSettings {
             fpsCap: d.integer(forKey: "fpsCap"),
             renderScale: max(0.35, min(1.5, d.float(forKey: "renderScale"))),
             paletteMode: d.integer(forKey: "paletteMode"),
-            debugView: d.integer(forKey: "debugView"),
             customWarm: NSColor(hex: d.string(forKey: "customWarm") ?? "#BAFF0A"),
             customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF")
         )
@@ -41,7 +38,6 @@ struct ScreensaverSettings {
         d.set(fpsCap, forKey: "fpsCap")
         d.set(renderScale, forKey: "renderScale")
         d.set(paletteMode, forKey: "paletteMode")
-        d.set(debugView, forKey: "debugView")
         d.set(customWarm.hexString, forKey: "customWarm")
         d.set(customCool.hexString, forKey: "customCool")
         d.synchronize()
@@ -49,12 +45,11 @@ struct ScreensaverSettings {
 }
 
 extension ScreensaverSettings {
-    static func previewDefaults(debugView: Int = 0) -> ScreensaverSettings {
+    static func previewDefaults() -> ScreensaverSettings {
         ScreensaverSettings(
             fpsCap: 60,
             renderScale: 1.0,
             paletteMode: 0,
-            debugView: debugView,
             customWarm: NSColor(hex: "#BAFF0A"),
             customCool: NSColor(hex: "#1D0AFF")
         )

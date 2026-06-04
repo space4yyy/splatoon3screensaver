@@ -26,41 +26,7 @@ vertex VertexOut fullscreenVertex(uint vid [[vertex_id]]) {
     return out;
 }
 
-fragment float4 solidPass(VertexOut in [[stage_in]],
-                          constant Uniforms& u [[buffer(0)]]) {
-    return float4(0.05, 0.16, 0.22, 1.0);
-}
 
-fragment float4 gradientPass(VertexOut in [[stage_in]],
-                             constant Uniforms& u [[buffer(0)]]) {
-    return float4(in.uv.x, in.uv.y, 0.35, 1.0);
-}
-
-fragment float4 directBubbleResourcePass(VertexOut in [[stage_in]],
-                                         constant Uniforms& u [[buffer(0)]],
-                                         texture2d<float> bubble [[texture(1)]]) {
-    uint2 p = uint2(clamp(in.uv, 0.0, 0.9999) * float2(256.0, 128.0));
-    float b = bubble.read(p).x;
-    return float4(float3(b), 1.0);
-}
-
-fragment float4 debugDTexturePass(VertexOut in [[stage_in]],
-                                  constant Uniforms& u [[buffer(0)]],
-                                  texture2d<float> dTex [[texture(2)]]) {
-    uint2 p = uint2(clamp(in.uv, 0.0, 0.9999) * float2(256.0, 128.0));
-    p = min(p, uint2(dTex.get_width() - 1, dTex.get_height() - 1));
-    float b = dTex.read(p).x;
-    return float4(float3(b), 1.0);
-}
-
-fragment float4 debugATexturePass(VertexOut in [[stage_in]],
-                                  constant Uniforms& u [[buffer(0)]],
-                                  texture2d<float> aTex [[texture(0)]]) {
-    uint2 p = uint2(clamp(in.uv, 0.0, 0.9999) * u.bufferResolution.xy);
-    p = min(p, uint2(aTex.get_width() - 1, aTex.get_height() - 1));
-    float4 a = aTex.read(p);
-    return float4(float3(a.w * 0.5 + 0.5), 1.0);
-}
 
 float4 readTex(texture2d<float> tex, int2 p) {
     if (tex.get_width() == 0) { return float4(0.0); }
@@ -232,26 +198,6 @@ fragment float4 passD(VertexOut in [[stage_in]],
     return float4(phase, target, prevDown, 1.0);
 }
 
-fragment float4 passDConstant(VertexOut in [[stage_in]],
-                              constant Uniforms& u [[buffer(0)]]) {
-    int2 p = int2(float2(in.uv.x, 1.0 - in.uv.y) * u.resolution.xy);
-    if (p.x < 256 && p.y < 128) {
-        return float4(1.0, 1.0, 1.0, 1.0);
-    }
-    return float4(0.0, 0.0, 0.0, 1.0);
-}
-
-fragment float4 passDBubbleCopy(VertexOut in [[stage_in]],
-                                constant Uniforms& u [[buffer(0)]],
-                                texture2d<float> unused [[texture(0)]],
-                                texture2d<float> bubble [[texture(1)]]) {
-    int2 p = int2(float2(in.uv.x, 1.0 - in.uv.y) * u.resolution.xy);
-    if (p.x < 256 && p.y < 128) {
-        return float4(float3(bubble.read(uint2(p)).x), 1.0);
-    }
-    return float4(0.0, 0.0, 0.0, 1.0);
-}
-
 float2x2 rot(float a) {
     float c = cos(a);
     float s = sin(a);
@@ -370,30 +316,3 @@ fragment float4 imagePass(VertexOut in [[stage_in]],
     return float4(toSRGB(mix(coolC, warmC, a)), 1.0);
 }
 
-fragment float4 debugDyePass(VertexOut in [[stage_in]],
-                             constant Uniforms& u [[buffer(0)]],
-                             texture2d<float> cTex [[texture(0)]],
-                             texture2d<float> dTex [[texture(2)]]) {
-    float dye = dyeAt(cTex, in.uv, u.bufferResolution.xy);
-    return float4(float3(dye * 0.5 + 0.5), 1.0);
-}
-
-fragment float4 debugBubblePass(VertexOut in [[stage_in]],
-                                constant Uniforms& u [[buffer(0)]],
-                                texture2d<float> cTex [[texture(0)]],
-                                texture2d<float> dTex [[texture(2)]]) {
-    float loop = 2000.0 / 60.0;
-    float time = u.bufferResolution.w;
-    float lp = fract(time / loop);
-    float fr = lp * 2000.0;
-    float yf = 2.0 * u.resolution.y / u.resolution.x;
-    float2 cen = float2(0.5, 0.5 * yf);
-    float2 buv = float2(in.uv.x, in.uv.y * yf);
-    float2 wsc = float2(warmBreathX(fr), warmBreathY(fr));
-    float2 cb = (rot(coolWob(lp) * M_PI_F / 180.0) * (buv - cen) + cen) * 4.48 * coolBreath(fr);
-    float2 wb = (rot(warmWob(lp) * M_PI_F / 180.0) * ((buv - cen) * wsc) + cen) * 3.5;
-    float scrl = 1.0 / loop;
-    float bb = bubbleTex(dTex, cb + float2(-scrl, -scrl) * time);
-    float bo = bubbleTex(dTex, wb + float2(scrl, -scrl) * time);
-    return float4(bo, bb, 0.0, 1.0);
-}
