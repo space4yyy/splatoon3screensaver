@@ -262,14 +262,26 @@ float dyeAt(texture2d<float> cTex, float2 uv, float2 res) {
 }
 
 float3 paletteWarm(int idx, constant Uniforms& u) {
-    if (u.state.y == 3) { return u.customWarm.xyz; }
+    int mode = u.state.y;
+    if (mode == 4) { return u.customWarm.xyz; }
+    if (mode == 1) { return float3(0.945098, 0.098039, 0.0); } // Splatoon 1 (Orange)
+    if (mode == 2) { return float3(0.980392, 0.054902, 0.470588); } // Splatoon 2 (Pink)
+    if (mode == 3) { return float3(0.729412, 1.0, 0.039216); } // Splatoon 3 (Yellow)
+    
+    // mode == 0 (Cycle)
     if (idx == 1) { return float3(0.945098, 0.098039, 0.0); }
     if (idx == 2) { return float3(0.980392, 0.054902, 0.470588); }
     return float3(0.729412, 1.0, 0.039216);
 }
 
 float3 paletteCool(int idx, constant Uniforms& u) {
-    if (u.state.y == 3) { return u.customCool.xyz; }
+    int mode = u.state.y;
+    if (mode == 4) { return u.customCool.xyz; }
+    if (mode == 1) { return float3(0.0, 0.027451, 0.956863); } // Splatoon 1 (Blue)
+    if (mode == 2) { return float3(0.039216, 0.921569, 0.031373); } // Splatoon 2 (Green)
+    if (mode == 3) { return float3(0.113725, 0.039216, 1.0); } // Splatoon 3 (Purple)
+    
+    // mode == 0 (Cycle)
     if (idx == 1) { return float3(0.0, 0.027451, 0.956863); }
     if (idx == 2) { return float3(0.039216, 0.921569, 0.031373); }
     return float3(0.113725, 0.039216, 1.0);

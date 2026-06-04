@@ -8,6 +8,7 @@ final class ConfigSheetController: NSWindowController {
     private let palettePopup = NSPopUpButton()
     private let warmWell = NSColorWell()
     private let coolWell = NSColorWell()
+    private let grid = NSGridView()
 
     init() {
         let window = NSWindow(
@@ -39,7 +40,6 @@ final class ConfigSheetController: NSWindowController {
         content.addSubview(titleLabel)
         
         // 2. Form Grid
-        let grid = NSGridView()
         grid.rowSpacing = 10
         grid.columnSpacing = 12
         grid.yPlacement = .center // Vertically center views in their rows (resolves NSColorWell baseline offset)
@@ -53,8 +53,8 @@ final class ConfigSheetController: NSWindowController {
         )
         scalePopup.addItems(withTitles: ["0.5x", "0.75x", "1.0x", "1.25x", "1.5x"])
         palettePopup.addItems(withTitles: isChinese
-            ? ["绿 / 蓝", "红 / 蓝", "粉 / 绿", "自定义"]
-            : ["Green / Blue", "Red / Blue", "Pink / Green", "Custom"]
+            ? ["历代循环", "斯普拉遁 1 代 (橙 / 蓝)", "斯普拉遁 2 代 (粉 / 绿)", "斯普拉遁 3 代 (黄 / 紫)", "自定义"]
+            : ["Cycle (All games)", "Splatoon 1 (Orange / Blue)", "Splatoon 2 (Pink / Green)", "Splatoon 3 (Yellow / Purple)", "Custom"]
         )
         
         // Constrain control widths
@@ -99,6 +99,9 @@ final class ConfigSheetController: NSWindowController {
         buttonRow.addArrangedSubview(defaultsButton)
         buttonRow.addArrangedSubview(doneButton)
         
+        let bottomConstraint = buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16)
+        bottomConstraint.priority = .init(950) // Allow slight variance during window resize to prevent autolayout warnings
+
         // Constraints (Bypassing mainStack stretching to center grid perfectly as a unit)
         NSLayoutConstraint.activate([
             titleLabel.centerXAnchor.constraint(equalTo: content.centerXAnchor),
@@ -109,7 +112,7 @@ final class ConfigSheetController: NSWindowController {
             
             buttonRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             buttonRow.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
+            bottomConstraint,
             buttonRow.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 20)
         ])
     }
@@ -120,18 +123,39 @@ final class ConfigSheetController: NSWindowController {
         return label
     }
 
+    private func updateColorWellsVisibility(animate: Bool) {
+        guard let window = window else { return }
+        let isCustom = palettePopup.indexOfSelectedItem == 4 // Index 4 is "Custom"
+        
+        // Hide/show the ink color selection rows (indices 3 and 4)
+        grid.row(at: 3).isHidden = !isCustom
+        grid.row(at: 4).isHidden = !isCustom
+        
+        let targetContentHeight: CGFloat = isCustom ? 280 : 212
+        let currentFrame = window.frame
+        let targetFrame = window.frameRect(forContentRect: NSRect(x: currentFrame.origin.x, y: currentFrame.origin.y, width: currentFrame.size.width, height: targetContentHeight))
+        
+        let diff = targetFrame.size.height - currentFrame.size.height
+        var finalFrame = targetFrame
+        finalFrame.origin.y = currentFrame.origin.y - diff
+        
+        window.setFrame(finalFrame, display: true, animate: animate)
+    }
+
     private func load() {
         let s = ScreensaverSettings.load()
         fpsPopup.selectItem(at: [30, 60, 120, 0].firstIndex(of: s.fpsCap) ?? 1)
         let scales: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5]
         scalePopup.selectItem(at: scales.enumerated().min(by: { abs($0.element - s.renderScale) < abs($1.element - s.renderScale) })?.offset ?? 2)
-        palettePopup.selectItem(at: max(0, min(3, s.paletteMode)))
+        palettePopup.selectItem(at: max(0, min(4, s.paletteMode)))
         warmWell.color = s.customWarm
         coolWell.color = s.customCool
+        updateColorWellsVisibility(animate: false)
     }
 
     @objc private func changed() {
         save()
+        updateColorWellsVisibility(animate: true)
         onChange?()
     }
 
