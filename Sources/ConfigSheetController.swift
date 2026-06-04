@@ -11,12 +11,11 @@ final class ConfigSheetController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 350),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 285),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
-        window.title = "Splatoon 3 Boot Options"
         super.init(window: window)
         buildUI()
         load()
@@ -28,56 +27,105 @@ final class ConfigSheetController: NSWindowController {
 
     private func buildUI() {
         guard let content = window?.contentView else { return }
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -24)
-        ])
-
-        fpsPopup.addItems(withTitles: ["30 fps", "60 fps", "120 fps", "Display Sync"])
+        
+        let isChinese = Locale.preferredLanguages.first?.hasPrefix("zh") ?? false
+        window?.title = isChinese ? "Splatoon 3 启动选项" : "Splatoon 3 Boot Options"
+        
+        // 1. Header label (Title)
+        let titleLabel = NSTextField(labelWithString: isChinese ? "Splatoon 3 启动选项" : "Splatoon 3 Boot Options")
+        titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        titleLabel.textColor = .labelColor
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        // 2. Form Grid
+        let grid = NSGridView()
+        grid.rowSpacing = 10
+        grid.columnSpacing = 12
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add items to popups
+        fpsPopup.addItems(withTitles: isChinese 
+            ? ["30 fps", "60 fps", "120 fps", "显示器同步"]
+            : ["30 fps", "60 fps", "120 fps", "Display Sync"]
+        )
         scalePopup.addItems(withTitles: ["0.5x", "0.75x", "1.0x", "1.25x", "1.5x"])
-        palettePopup.addItems(withTitles: ["Green / Blue", "Red / Blue", "Pink / Green", "Custom"])
-
-        stack.addArrangedSubview(row("FPS cap", fpsPopup))
-        stack.addArrangedSubview(row("Render scale", scalePopup))
-        stack.addArrangedSubview(row("Colours", palettePopup))
-        stack.addArrangedSubview(row("Warm ink", warmWell))
-        stack.addArrangedSubview(row("Cool ink", coolWell))
-
-        let buttons = NSStackView()
-        buttons.orientation = .horizontal
-        buttons.spacing = 8
-        let defaults = NSButton(title: "Reset Defaults", target: self, action: #selector(resetDefaults))
-        let done = NSButton(title: "Done", target: self, action: #selector(done))
-        buttons.addArrangedSubview(defaults)
-        buttons.addArrangedSubview(done)
-        stack.addArrangedSubview(buttons)
-
+        palettePopup.addItems(withTitles: isChinese
+            ? ["绿 / 蓝", "红 / 蓝", "粉 / 绿", "自定义"]
+            : ["Green / Blue", "Red / Blue", "Pink / Green", "Custom"]
+        )
+        
+        // Constrain control widths
+        for control in [fpsPopup, scalePopup, palettePopup, warmWell, coolWell] {
+            control.translatesAutoresizingMaskIntoConstraints = false
+            control.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        }
+        
+        warmWell.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        coolWell.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        
+        // Add rows to grid
+        grid.addRow(with: [createLabel(isChinese ? "帧率限制" : "FPS cap"), fpsPopup])
+        grid.addRow(with: [createLabel(isChinese ? "渲染缩放" : "Render scale"), scalePopup])
+        grid.addRow(with: [createLabel(isChinese ? "色彩方案" : "Colours"), palettePopup])
+        grid.addRow(with: [createLabel(isChinese ? "暖色墨水" : "Warm ink"), warmWell])
+        grid.addRow(with: [createLabel(isChinese ? "冷色墨水" : "Cool ink"), coolWell])
+        
+        // Align labels in the first column to the right
+        for i in 0..<grid.numberOfRows {
+            let cell = grid.cell(atColumnIndex: 0, rowIndex: i)
+            (cell.contentView as? NSTextField)?.alignment = .right
+        }
+        
+        // 3. Bottom Buttons
+        let defaultsButton = NSButton(title: isChinese ? "恢复默认" : "Reset Defaults", target: self, action: #selector(resetDefaults))
+        defaultsButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        let doneButton = NSButton(title: isChinese ? "完成" : "Done", target: self, action: #selector(done))
+        doneButton.keyEquivalent = "\r" // Enter key triggers Done
+        doneButton.translatesAutoresizingMaskIntoConstraints = false
+        
         [fpsPopup, scalePopup, palettePopup, warmWell, coolWell].forEach {
             ($0 as NSControl).target = self
             ($0 as NSControl).action = #selector(changed)
         }
+        
+        // Assembly using a main stack view
+        let mainStack = NSStackView()
+        mainStack.orientation = .vertical
+        mainStack.alignment = .centerX
+        mainStack.spacing = 16
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(mainStack)
+        
+        mainStack.addArrangedSubview(titleLabel)
+        mainStack.addArrangedSubview(grid)
+        
+        let buttonRow = NSStackView()
+        buttonRow.orientation = .horizontal
+        buttonRow.distribution = .equalSpacing
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(buttonRow)
+        
+        buttonRow.addArrangedSubview(defaultsButton)
+        buttonRow.addArrangedSubview(doneButton)
+        
+        // Constraints
+        NSLayoutConstraint.activate([
+            mainStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            mainStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            mainStack.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
+            
+            buttonRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            buttonRow.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
+            buttonRow.topAnchor.constraint(equalTo: mainStack.bottomAnchor, constant: 20)
+        ])
     }
-
-    private func row(_ label: String, _ control: NSView) -> NSView {
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 12
-        let text = NSTextField(labelWithString: label)
-        text.widthAnchor.constraint(equalToConstant: 110).isActive = true
-        control.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        row.addArrangedSubview(text)
-        row.addArrangedSubview(control)
-        return row
+    
+    private func createLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.alignment = .right
+        return label
     }
 
     private func load() {
