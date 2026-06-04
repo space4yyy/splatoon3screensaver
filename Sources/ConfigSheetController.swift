@@ -11,7 +11,7 @@ final class ConfigSheetController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 285),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 280),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -41,6 +41,7 @@ final class ConfigSheetController: NSWindowController {
         let grid = NSGridView()
         grid.rowSpacing = 10
         grid.columnSpacing = 12
+        grid.rowAlignment = .firstBaseline
         grid.translatesAutoresizingMaskIntoConstraints = false
         
         // Add items to popups
@@ -70,11 +71,9 @@ final class ConfigSheetController: NSWindowController {
         grid.addRow(with: [createLabel(isChinese ? "暖色墨水" : "Warm ink"), warmWell])
         grid.addRow(with: [createLabel(isChinese ? "冷色墨水" : "Cool ink"), coolWell])
         
-        // Align labels in the first column to the right
-        for i in 0..<grid.numberOfRows {
-            let cell = grid.cell(atColumnIndex: 0, rowIndex: i)
-            (cell.contentView as? NSTextField)?.alignment = .right
-        }
+        // Align columns: Column 0 trailing (right aligned), Column 1 leading (left aligned)
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .leading
         
         // 3. Bottom Buttons
         let defaultsButton = NSButton(title: isChinese ? "恢复默认" : "Reset Defaults", target: self, action: #selector(resetDefaults))
