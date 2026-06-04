@@ -97,9 +97,14 @@ final class ConfigSheetController: NSWindowController {
         
         let buttonRow = NSStackView()
         buttonRow.orientation = .horizontal
-        buttonRow.distribution = .equalSpacing
+        buttonRow.distribution = .fill
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(buttonRow)
+        
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.init(100), for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.init(100), for: .horizontal)
         
         let rightButtonStack = NSStackView()
         rightButtonStack.orientation = .horizontal
@@ -109,6 +114,7 @@ final class ConfigSheetController: NSWindowController {
         rightButtonStack.addArrangedSubview(doneButton)
         
         buttonRow.addArrangedSubview(defaultsButton)
+        buttonRow.addArrangedSubview(spacer)
         buttonRow.addArrangedSubview(rightButtonStack)
         
         let bottomConstraint = buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16)
