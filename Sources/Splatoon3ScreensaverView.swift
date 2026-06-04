@@ -19,6 +19,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func setupMetal() {
+        self.wantsLayer = true // Force layer-backing on the parent view for correct compositing across multiple displays
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let view = MTKView(frame: bounds, device: device)
         view.autoresizingMask = [.width, .height]
