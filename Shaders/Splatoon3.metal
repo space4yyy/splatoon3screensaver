@@ -39,7 +39,8 @@ float4 cellRead(texture2d<float> tex, float2 c, float2 res) {
     float cx = fmod(c.x, SIM.x);
     if (cx < 0.0) { cx += SIM.x; }
     float cy = clamp(c.y, 0.0, SIM.y - 1.0);
-    int2 px = int2((float2(cx, cy) + 0.5) / SIM * res);
+    float scale = res.x * 0.0015625; // 1.0 / 640.0
+    int2 px = int2((float2(cx, cy) + 0.5) * scale);
     return readTex(tex, px);
 }
 
@@ -110,7 +111,7 @@ fragment float4 passA(VertexOut in [[stage_in]],
 
     bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
     if (!simStep) {
-        return field(cPrev, uv, res);
+        return readTex(cPrev, int2(float2(in.uv.x, 1.0 - in.uv.y) * res));
     }
 
     float4 c = field(cPrev, uv, res);
@@ -141,7 +142,7 @@ fragment float4 passB(VertexOut in [[stage_in]],
     int frame = u.state.x;
     float rate = 60.0 * (time < 0.5 ? 15.0 : 1.0);
     bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
-    if (!simStep) { return field(aTex, uv, res); }
+    if (!simStep) { return readTex(aTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res)); }
 
     float4 c = field(aTex, uv, res);
     float lx = field(aTex, uv - float2(TX.x, 0.0), res).x;
@@ -160,7 +161,7 @@ fragment float4 passC(VertexOut in [[stage_in]],
     int frame = u.state.x;
     float rate = 60.0 * (time < 0.5 ? 15.0 : 1.0);
     bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
-    if (!simStep) { return field(bTex, uv, res); }
+    if (!simStep) { return readTex(bTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res)); }
     float2 vel = field(bTex, uv, res).xy;
     return field(bTex, uv - vel * TX, res);
 }
