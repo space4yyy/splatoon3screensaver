@@ -36,13 +36,15 @@ final class ConfigSheetController: NSWindowController {
         titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(titleLabel)
         
         // 2. Form Grid
         let grid = NSGridView()
         grid.rowSpacing = 10
         grid.columnSpacing = 12
-        grid.rowAlignment = .firstBaseline
+        grid.yPlacement = .center // Vertically center views in their rows (resolves NSColorWell baseline offset)
         grid.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(grid)
         
         // Add items to popups
         fpsPopup.addItems(withTitles: isChinese 
@@ -88,17 +90,6 @@ final class ConfigSheetController: NSWindowController {
             ($0 as NSControl).action = #selector(changed)
         }
         
-        // Assembly using a main stack view
-        let mainStack = NSStackView()
-        mainStack.orientation = .vertical
-        mainStack.alignment = .centerX
-        mainStack.spacing = 16
-        mainStack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(mainStack)
-        
-        mainStack.addArrangedSubview(titleLabel)
-        mainStack.addArrangedSubview(grid)
-        
         let buttonRow = NSStackView()
         buttonRow.orientation = .horizontal
         buttonRow.distribution = .equalSpacing
@@ -108,16 +99,18 @@ final class ConfigSheetController: NSWindowController {
         buttonRow.addArrangedSubview(defaultsButton)
         buttonRow.addArrangedSubview(doneButton)
         
-        // Constraints
+        // Constraints (Bypassing mainStack stretching to center grid perfectly as a unit)
         NSLayoutConstraint.activate([
-            mainStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            mainStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            mainStack.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
+            titleLabel.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            titleLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
+            
+            grid.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            grid.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
             
             buttonRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             buttonRow.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
             buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-            buttonRow.topAnchor.constraint(equalTo: mainStack.bottomAnchor, constant: 20)
+            buttonRow.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 20)
         ])
     }
     
