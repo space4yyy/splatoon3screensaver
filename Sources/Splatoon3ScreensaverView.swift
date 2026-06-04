@@ -1,4 +1,5 @@
 import AppKit
+import Metal
 import MetalKit
 import ScreenSaver
 
@@ -10,18 +11,26 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
-        setupMetal()
     }
 
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
-        setupMetal()
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil && metalView == nil {
+            setupMetal()
+        }
     }
 
     private func setupMetal() {
         self.wantsLayer = true // Force layer-backing on the parent view for correct compositing across multiple displays
-        guard let device = MTLCreateSystemDefaultDevice() else { return }
-        let view = MTKView(frame: bounds, device: device)
+        
+        let view = MTKView(frame: bounds, device: MTLCreateSystemDefaultDevice())
+        if let preferred = view.preferredDevice {
+            view.device = preferred
+        }
         view.autoresizingMask = [.width, .height]
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = false
