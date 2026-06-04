@@ -24,7 +24,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         view.autoresizingMask = [.width, .height]
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = false
-        view.isPaused = false
+        view.isPaused = true // Let ScreenSaverView's animateOneFrame drive rendering
         addSubview(view)
         metalView = view
         renderer = SplatoonRenderer(view: view, waitForFrameCompletion: true)
@@ -33,16 +33,20 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override func startAnimation() {
         super.startAnimation()
         renderer?.reloadSettings(resetSimulation: false)
-        metalView?.isPaused = false
+        let fps = ScreensaverSettings.load().fpsCap
+        if fps > 0 {
+            self.animationTimeInterval = 1.0 / Double(fps)
+        } else {
+            self.animationTimeInterval = 1.0 / 60.0 // Default to 60fps for sync
+        }
     }
 
     public override func stopAnimation() {
-        metalView?.isPaused = true
         super.stopAnimation()
     }
 
     public override func animateOneFrame() {
-        // No-op. MTKView automatically renders using its own CVDisplayLink thread when isPaused = false.
+        metalView?.draw()
     }
 
     public override var hasConfigureSheet: Bool { true }
