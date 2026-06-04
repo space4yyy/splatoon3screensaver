@@ -12,12 +12,14 @@ MIN_MACOS := 13.0
 
 all: $(BUNDLE)
 
-$(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources/bubble-mask.raw
+$(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources/bubble-mask.raw Resources/thumbnail.png Resources/thumbnail@2x.png
 	@command -v xcrun >/dev/null || (echo "xcrun is required. Install Xcode." && exit 1)
 	@xcrun --find metal >/dev/null || (echo "The Metal compiler is unavailable. Install full Xcode and run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" && exit 1)
 	@mkdir -p "$(MACOS)" "$(RESOURCES)" "$(BUILD_DIR)/module-cache"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
 	cp Resources/bubble-mask.raw "$(RESOURCES)/bubble-mask.raw"
+	cp Resources/thumbnail.png "$(RESOURCES)/thumbnail.png"
+	cp Resources/thumbnail@2x.png "$(RESOURCES)/thumbnail@2x.png"
 	xcrun -sdk macosx metal -std=macos-metal2.4 -mmacosx-version-min=$(MIN_MACOS) \
 		-fmodules-cache-path="$(BUILD_DIR)/module-cache" \
 		"$(METAL_SOURCE)" -o "$(RESOURCES)/default.metallib"
