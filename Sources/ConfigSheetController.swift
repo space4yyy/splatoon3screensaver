@@ -53,8 +53,8 @@ final class ConfigSheetController: NSWindowController {
         )
         scalePopup.addItems(withTitles: ["0.5x", "0.75x", "1.0x", "1.25x", "1.5x"])
         palettePopup.addItems(withTitles: isChinese
-            ? ["历代循环", "历代随机", "斯普拉遁 1 代 (橙 / 蓝)", "斯普拉遁 2 代 (粉 / 绿)", "斯普拉遁 3 代 (黄 / 紫)", "自定义"]
-            : ["Cycle (All games)", "Random on launch", "Splatoon 1 (Orange / Blue)", "Splatoon 2 (Pink / Green)", "Splatoon 3 (Yellow / Purple)", "Custom"]
+            ? ["历代随机", "历代循环", "斯普拉遁 1 代 (橙 / 蓝)", "斯普拉遁 2 代 (粉 / 绿)", "斯普拉遁 3 代 (黄 / 紫)", "自定义"]
+            : ["Random on launch", "Cycle (All games)", "Splatoon 1 (Orange / Blue)", "Splatoon 2 (Pink / Green)", "Splatoon 3 (Yellow / Purple)", "Custom"]
         )
         
         // Constrain control widths

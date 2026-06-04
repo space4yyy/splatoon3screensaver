@@ -180,7 +180,7 @@ fragment float4 passD(VertexOut in [[stage_in]],
     float target = s.y;
     float prevDown = s.z;
 
-    if (u.state.y == 0) {
+    if (u.state.y == 1) {
         // Auto-cycling mode: animate phase based on absolute time
         float time = u.bufferResolution.w;
         float T = 30.0; // cycle interval (30 seconds per game)
@@ -275,7 +275,7 @@ float3 paletteWarm(int idx, constant Uniforms& u) {
     if (mode == 3) { return float3(0.980392, 0.054902, 0.470588); } // Splatoon 2 (Pink)
     if (mode == 4) { return float3(0.729412, 1.0, 0.039216); } // Splatoon 3 (Yellow)
     
-    // mode == 0 (Cycle)
+    // mode == 1 (Cycle)
     if (idx == 1) { return float3(0.945098, 0.098039, 0.0); }
     if (idx == 2) { return float3(0.980392, 0.054902, 0.470588); }
     return float3(0.729412, 1.0, 0.039216);
@@ -288,7 +288,7 @@ float3 paletteCool(int idx, constant Uniforms& u) {
     if (mode == 3) { return float3(0.039216, 0.921569, 0.031373); } // Splatoon 2 (Green)
     if (mode == 4) { return float3(0.113725, 0.039216, 1.0); } // Splatoon 3 (Purple)
     
-    // mode == 0 (Cycle)
+    // mode == 1 (Cycle)
     if (idx == 1) { return float3(0.0, 0.027451, 0.956863); }
     if (idx == 2) { return float3(0.039216, 0.921569, 0.031373); }
     return float3(0.113725, 0.039216, 1.0);

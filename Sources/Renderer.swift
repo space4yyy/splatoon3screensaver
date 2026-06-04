@@ -109,7 +109,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             recreateTextures()
         }
         
-        if settings.paletteMode == 1 {
+        if settings.paletteMode == 0 {
             // Pick a random game (2 = Splatoon 1, 3 = Splatoon 2, 4 = Splatoon 3)
             // if we are resetting the simulation or if the palette mode was not yet resolved to a valid game
             if resetSimulation || resolvedPaletteMode < 2 || resolvedPaletteMode > 4 {
