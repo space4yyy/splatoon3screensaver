@@ -53,8 +53,8 @@ final class ConfigSheetController: NSWindowController {
         )
         scalePopup.addItems(withTitles: ["0.5x", "0.75x", "1.0x", "1.25x", "1.5x"])
         palettePopup.addItems(withTitles: isChinese
-            ? ["历代循环", "斯普拉遁 1 代 (橙 / 蓝)", "斯普拉遁 2 代 (粉 / 绿)", "斯普拉遁 3 代 (黄 / 紫)", "自定义"]
-            : ["Cycle (All games)", "Splatoon 1 (Orange / Blue)", "Splatoon 2 (Pink / Green)", "Splatoon 3 (Yellow / Purple)", "Custom"]
+            ? ["历代循环", "历代随机", "斯普拉遁 1 代 (橙 / 蓝)", "斯普拉遁 2 代 (粉 / 绿)", "斯普拉遁 3 代 (黄 / 紫)", "自定义"]
+            : ["Cycle (All games)", "Random on launch", "Splatoon 1 (Orange / Blue)", "Splatoon 2 (Pink / Green)", "Splatoon 3 (Yellow / Purple)", "Custom"]
         )
         
         // Constrain control widths
@@ -125,7 +125,7 @@ final class ConfigSheetController: NSWindowController {
 
     private func updateColorWellsVisibility(animate: Bool) {
         guard let window = window else { return }
-        let isCustom = palettePopup.indexOfSelectedItem == 4 // Index 4 is "Custom"
+        let isCustom = palettePopup.indexOfSelectedItem == 5 // Index 5 is "Custom"
         
         // Hide/show the ink color selection rows (indices 3 and 4)
         grid.row(at: 3).isHidden = !isCustom
@@ -147,7 +147,7 @@ final class ConfigSheetController: NSWindowController {
         fpsPopup.selectItem(at: [30, 60, 120, 0].firstIndex(of: s.fpsCap) ?? 1)
         let scales: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5]
         scalePopup.selectItem(at: scales.enumerated().min(by: { abs($0.element - s.renderScale) < abs($1.element - s.renderScale) })?.offset ?? 2)
-        palettePopup.selectItem(at: max(0, min(4, s.paletteMode)))
+        palettePopup.selectItem(at: max(0, min(5, s.paletteMode)))
         warmWell.color = s.customWarm
         coolWell.color = s.customCool
         updateColorWellsVisibility(animate: false)

@@ -180,20 +180,27 @@ fragment float4 passD(VertexOut in [[stage_in]],
     float target = s.y;
     float prevDown = s.z;
 
-    if (u.state.x < 2) {
-        phase = float(max(0, min(2, u.state.y)));
+    if (u.state.y == 0) {
+        // Auto-cycling mode: animate phase based on absolute time
+        float time = u.bufferResolution.w;
+        float T = 30.0; // cycle interval (30 seconds per game)
+        float t_trans = 4.0; // transition duration (4 seconds)
+        float cycleIndex = floor(time / T);
+        float rem = fmod(time, T);
+        if (rem < T - t_trans) {
+            phase = cycleIndex;
+        } else {
+            phase = cycleIndex + (rem - (T - t_trans)) / t_trans;
+        }
         target = phase;
         prevDown = 0.0;
-    }
-
-    if (u.state.y < 3) {
-        target = float(u.state.y);
-        phase = target;
     } else {
-        float down = u.mouse.z > 0.0 ? 1.0 : 0.0;
-        if (down > 0.5 && prevDown < 0.5) { target += 1.0; }
-        phase = min(phase + u.customWarm.w / 0.8, target);
-        prevDown = down;
+        // Locked color modes
+        if (u.state.y == 2) { phase = 1.0; } // Splatoon 1
+        else if (u.state.y == 3) { phase = 2.0; } // Splatoon 2
+        else { phase = 0.0; } // Splatoon 3 (mode 4) and Custom (mode 5)
+        target = phase;
+        prevDown = 0.0;
     }
     return float4(phase, target, prevDown, 1.0);
 }
@@ -263,10 +270,10 @@ float dyeAt(texture2d<float> cTex, float2 uv, float2 res) {
 
 float3 paletteWarm(int idx, constant Uniforms& u) {
     int mode = u.state.y;
-    if (mode == 4) { return u.customWarm.xyz; }
-    if (mode == 1) { return float3(0.945098, 0.098039, 0.0); } // Splatoon 1 (Orange)
-    if (mode == 2) { return float3(0.980392, 0.054902, 0.470588); } // Splatoon 2 (Pink)
-    if (mode == 3) { return float3(0.729412, 1.0, 0.039216); } // Splatoon 3 (Yellow)
+    if (mode == 5) { return u.customWarm.xyz; }
+    if (mode == 2) { return float3(0.945098, 0.098039, 0.0); } // Splatoon 1 (Orange)
+    if (mode == 3) { return float3(0.980392, 0.054902, 0.470588); } // Splatoon 2 (Pink)
+    if (mode == 4) { return float3(0.729412, 1.0, 0.039216); } // Splatoon 3 (Yellow)
     
     // mode == 0 (Cycle)
     if (idx == 1) { return float3(0.945098, 0.098039, 0.0); }
@@ -276,10 +283,10 @@ float3 paletteWarm(int idx, constant Uniforms& u) {
 
 float3 paletteCool(int idx, constant Uniforms& u) {
     int mode = u.state.y;
-    if (mode == 4) { return u.customCool.xyz; }
-    if (mode == 1) { return float3(0.0, 0.027451, 0.956863); } // Splatoon 1 (Blue)
-    if (mode == 2) { return float3(0.039216, 0.921569, 0.031373); } // Splatoon 2 (Green)
-    if (mode == 3) { return float3(0.113725, 0.039216, 1.0); } // Splatoon 3 (Purple)
+    if (mode == 5) { return u.customCool.xyz; }
+    if (mode == 2) { return float3(0.0, 0.027451, 0.956863); } // Splatoon 1 (Blue)
+    if (mode == 3) { return float3(0.039216, 0.921569, 0.031373); } // Splatoon 2 (Green)
+    if (mode == 4) { return float3(0.113725, 0.039216, 1.0); } // Splatoon 3 (Purple)
     
     // mode == 0 (Cycle)
     if (idx == 1) { return float3(0.0, 0.027451, 0.956863); }

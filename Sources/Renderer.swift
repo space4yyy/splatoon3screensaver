@@ -60,6 +60,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
     private var frame: Int32 = 0
     private var lastDrawableSize: CGSize = .zero
     private var loggedDrawFrames = 0
+    private var resolvedPaletteMode: Int = 0
 
     init?(
         view: MTKView,
@@ -107,8 +108,19 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             lastTime = startTime
             recreateTextures()
         }
+        
+        if settings.paletteMode == 1 {
+            // Pick a random game (2 = Splatoon 1, 3 = Splatoon 2, 4 = Splatoon 3)
+            // if we are resetting the simulation or if the palette mode was not yet resolved to a valid game
+            if resetSimulation || resolvedPaletteMode < 2 || resolvedPaletteMode > 4 {
+                resolvedPaletteMode = Int.random(in: 2...4)
+            }
+        } else {
+            resolvedPaletteMode = settings.paletteMode
+        }
+        
         buildResources()
-        DebugLog.write("reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode)")
+        DebugLog.write("reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode) resolvedPalette=\(resolvedPaletteMode)")
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -143,7 +155,7 @@ final class SplatoonRenderer: NSObject, MTKViewDelegate {
             mouse: SIMD4<Float>(0, 0, 0, 0),
             customWarm: SIMD4(settings.customWarm.float3, delta),
             customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(settings.paletteMode), 0, 0)
+            state: SIMD4(frame, Int32(resolvedPaletteMode), 0, 0)
         )
         if loggedDrawFrames < 20 {
             DebugLog.write("draw frame=\(frame) drawableSize=\(view.drawableSize) bounds=\(view.bounds) buffer=\(bufferWidth)x\(bufferHeight)")
