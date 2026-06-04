@@ -1,0 +1,90 @@
+import AppKit
+import ScreenSaver
+
+struct ScreensaverSettings {
+    static let moduleName = "dev.space4.Splatoon3Screensaver"
+
+    var fpsCap: Int
+    var renderScale: Float
+    var paletteMode: Int
+    var debugView: Int
+    var customWarm: NSColor
+    var customCool: NSColor
+
+    static var defaults: ScreenSaverDefaults {
+        let defaults = ScreenSaverDefaults(forModuleWithName: moduleName)!
+        defaults.register(defaults: [
+            "fpsCap": 60,
+            "renderScale": 1.0,
+            "paletteMode": 0,
+            "debugView": 0,
+            "customWarm": "#BAFF0A",
+            "customCool": "#1D0AFF"
+        ])
+        return defaults
+    }
+
+    static func load() -> ScreensaverSettings {
+        let d = defaults
+        return ScreensaverSettings(
+            fpsCap: d.integer(forKey: "fpsCap"),
+            renderScale: max(0.35, min(1.5, d.float(forKey: "renderScale"))),
+            paletteMode: d.integer(forKey: "paletteMode"),
+            debugView: d.integer(forKey: "debugView"),
+            customWarm: NSColor(hex: d.string(forKey: "customWarm") ?? "#BAFF0A"),
+            customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF")
+        )
+    }
+
+    func save() {
+        let d = Self.defaults
+        d.set(fpsCap, forKey: "fpsCap")
+        d.set(renderScale, forKey: "renderScale")
+        d.set(paletteMode, forKey: "paletteMode")
+        d.set(debugView, forKey: "debugView")
+        d.set(customWarm.hexString, forKey: "customWarm")
+        d.set(customCool.hexString, forKey: "customCool")
+        d.synchronize()
+    }
+}
+
+extension ScreensaverSettings {
+    static func previewDefaults(debugView: Int = 0) -> ScreensaverSettings {
+        ScreensaverSettings(
+            fpsCap: 60,
+            renderScale: 1.0,
+            paletteMode: 0,
+            debugView: debugView,
+            customWarm: NSColor(hex: "#BAFF0A"),
+            customCool: NSColor(hex: "#1D0AFF")
+        )
+    }
+}
+
+extension NSColor {
+    convenience init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let value = Int(cleaned, radix: 16) ?? 0xffffff
+        self.init(
+            calibratedRed: CGFloat((value >> 16) & 0xff) / 255.0,
+            green: CGFloat((value >> 8) & 0xff) / 255.0,
+            blue: CGFloat(value & 0xff) / 255.0,
+            alpha: 1.0
+        )
+    }
+
+    var float3: SIMD3<Float> {
+        let c = usingColorSpace(.deviceRGB) ?? self
+        return SIMD3(Float(c.redComponent), Float(c.greenComponent), Float(c.blueComponent))
+    }
+
+    var hexString: String {
+        let c = usingColorSpace(.deviceRGB) ?? self
+        return String(
+            format: "#%02X%02X%02X",
+            Int(round(c.redComponent * 255.0)),
+            Int(round(c.greenComponent * 255.0)),
+            Int(round(c.blueComponent * 255.0))
+        )
+    }
+}
