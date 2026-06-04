@@ -9,6 +9,7 @@ final class ConfigSheetController: NSWindowController {
     private let warmWell = NSColorWell()
     private let coolWell = NSColorWell()
     private let grid = NSGridView()
+    private var originalSettings: ScreensaverSettings?
 
     init() {
         let window = NSWindow(
@@ -81,6 +82,10 @@ final class ConfigSheetController: NSWindowController {
         let defaultsButton = NSButton(title: isChinese ? "恢复默认" : "Reset Defaults", target: self, action: #selector(resetDefaults))
         defaultsButton.translatesAutoresizingMaskIntoConstraints = false
         
+        let cancelButton = NSButton(title: isChinese ? "取消" : "Cancel", target: self, action: #selector(cancel))
+        cancelButton.keyEquivalent = "\u{1b}" // ESC key
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
+        
         let doneButton = NSButton(title: isChinese ? "完成" : "Done", target: self, action: #selector(done))
         doneButton.keyEquivalent = "\r" // Enter key triggers Done
         doneButton.translatesAutoresizingMaskIntoConstraints = false
@@ -96,8 +101,15 @@ final class ConfigSheetController: NSWindowController {
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(buttonRow)
         
+        let rightButtonStack = NSStackView()
+        rightButtonStack.orientation = .horizontal
+        rightButtonStack.spacing = 12
+        rightButtonStack.translatesAutoresizingMaskIntoConstraints = false
+        rightButtonStack.addArrangedSubview(cancelButton)
+        rightButtonStack.addArrangedSubview(doneButton)
+        
         buttonRow.addArrangedSubview(defaultsButton)
-        buttonRow.addArrangedSubview(doneButton)
+        buttonRow.addArrangedSubview(rightButtonStack)
         
         let bottomConstraint = buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16)
         bottomConstraint.priority = .init(950) // Allow slight variance during window resize to prevent autolayout warnings
@@ -144,6 +156,7 @@ final class ConfigSheetController: NSWindowController {
 
     private func load() {
         let s = ScreensaverSettings.load()
+        originalSettings = s
         fpsPopup.selectItem(at: [30, 60, 120, 0].firstIndex(of: s.fpsCap) ?? 1)
         let scales: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5]
         scalePopup.selectItem(at: scales.enumerated().min(by: { abs($0.element - s.renderScale) < abs($1.element - s.renderScale) })?.offset ?? 2)
@@ -168,9 +181,23 @@ final class ConfigSheetController: NSWindowController {
         changed()
     }
 
+    @objc private func cancel() {
+        originalSettings?.save()
+        onChange?()
+        if let parent = window?.sheetParent {
+            parent.endSheet(window!)
+        } else {
+            window?.close()
+        }
+    }
+
     @objc private func done() {
         save()
-        window?.sheetParent?.endSheet(window!)
+        if let parent = window?.sheetParent {
+            parent.endSheet(window!)
+        } else {
+            window?.close()
+        }
     }
 
     private func save() {
