@@ -29,10 +29,10 @@ final class ConfigSheetController: NSWindowController {
         guard let content = window?.contentView else { return }
         
         let isChinese = Locale.preferredLanguages.first?.hasPrefix("zh") ?? false
-        window?.title = isChinese ? "Splatoon 3 启动选项" : "Splatoon 3 Boot Options"
+        window?.title = isChinese ? "Splatoon 3 屏保选项" : "Splatoon 3 Screensaver Options"
         
         // 1. Header label (Title)
-        let titleLabel = NSTextField(labelWithString: isChinese ? "Splatoon 3 启动选项" : "Splatoon 3 Boot Options")
+        let titleLabel = NSTextField(labelWithString: isChinese ? "Splatoon 3 屏保选项" : "Splatoon 3 Screensaver Options")
         titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
