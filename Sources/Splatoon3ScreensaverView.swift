@@ -22,7 +22,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var isRendering = false
     private var activeAnimationInterval: TimeInterval = 1.0 / 60.0
     private let inactivePreviewAnimationInterval: TimeInterval = 1.0
-    private var didTrySetupRenderer = false
 
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -54,13 +53,12 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func setupRenderer() {
-        didTrySetupRenderer = true
         guard let metalLayer = self.metalLayer else { return }
         
         let screen = window?.screen ?? NSScreen.main
         guard let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() else {
-            AppLog.renderer.fault("No Metal device is available for this screen. Terminating screensaver process.")
-            exit(0)
+            AppLog.renderer.error("No Metal device is available for this screen.")
+            return
         }
         metalLayer.device = device
         
@@ -79,13 +77,13 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         )
         
         if renderer == nil {
-            AppLog.renderer.fault("Failed to initialize SplatoonRenderer. Terminating screensaver process.")
-            exit(0)
+            AppLog.renderer.error("Failed to initialize SplatoonRenderer.")
+            return
         }
         
         if renderer?.hasFatalError == true {
-            AppLog.renderer.fault("Fatal error during renderer initialization (missing resources or pipeline compilation failure). Terminating screensaver process.")
-            exit(0)
+            AppLog.renderer.error("Fatal error during renderer initialization (missing resources or pipeline compilation failure).")
+            return
         }
         
         renderer?.handleResize(to: drawableSize)
@@ -137,17 +135,12 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     private func renderFrame() {
         updateAnimationIntervalForCurrentVisibility()
-        if window != nil && didTrySetupRenderer {
-            if renderer == nil || renderer?.hasFatalError == true {
-                AppLog.renderer.fault("Renderer failed to initialize or has fatal error. Terminating process.")
-                exit(0)
-            }
-        }
         guard shouldRenderFrame else { return }
+        guard let renderer = self.renderer, !renderer.hasFatalError else { return }
         guard !isRendering else { return }
         isRendering = true
         autoreleasepool {
-            renderer?.draw()
+            renderer.draw()
         }
         isRendering = false
     }
