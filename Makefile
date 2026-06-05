@@ -1,11 +1,12 @@
 PRODUCT := Splatoon3Screensaver
 BUILD_DIR := build
+DIST_DIR := dist
+PACKAGE_NAME := splatoon3-boot.saver
 BUNDLE := $(BUILD_DIR)/$(PRODUCT).saver
+PACKAGE_BUNDLE := $(DIST_DIR)/$(PACKAGE_NAME)
 CONTENTS := $(BUNDLE)/Contents
 MACOS := $(CONTENTS)/MacOS
 RESOURCES := $(CONTENTS)/Resources
-DIST_DIR := dist
-PACKAGE := $(DIST_DIR)/$(PRODUCT).saver.zip
 SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/ConfigSheetController.swift Sources/Splatoon3ScreensaverView.swift
 METAL_SOURCE := Shaders/Splatoon3.metal
 MIN_MACOS := 13.0
@@ -35,16 +36,16 @@ $(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources
 
 install: all
 	@mkdir -p "$$HOME/Library/Screen Savers"
-	rm -rf "$$HOME/Library/Screen Savers/$(PRODUCT).saver"
-	ditto "$(BUNDLE)" "$$HOME/Library/Screen Savers/$(PRODUCT).saver"
-	xattr -cr "$$HOME/Library/Screen Savers/$(PRODUCT).saver"
-	@echo "Installed $(PRODUCT).saver to $$HOME/Library/Screen Savers"
+	rm -rf "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
+	ditto "$(BUNDLE)" "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
+	xattr -cr "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
+	@echo "Installed $(PACKAGE_NAME) to $$HOME/Library/Screen Savers"
 
 package: all
 	@mkdir -p "$(DIST_DIR)"
-	rm -f "$(PACKAGE)"
-	ditto -c -k --keepParent "$(BUNDLE)" "$(PACKAGE)"
-	@echo "Packaged $(PACKAGE)"
+	rm -rf "$(PACKAGE_BUNDLE)"
+	ditto "$(BUNDLE)" "$(PACKAGE_BUNDLE)"
+	@echo "Built $(PACKAGE_BUNDLE)"
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(DIST_DIR)"
