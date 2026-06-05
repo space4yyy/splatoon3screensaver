@@ -32,35 +32,22 @@ Main features:
 
 ## Getting Started
 
-Download the latest release asset: [Splatoon3Screensaver.saver.zip](https://github.com/space4yyy/splatoon3screensaver/releases/latest/download/Splatoon3Screensaver.saver.zip)
+1. **Download & Extract**: Download the latest build from the GitHub Actions artifacts, and extract it to obtain `splatoon3-boot.saver`.
+2. **Install**: Double-click `splatoon3-boot.saver` to install it. macOS will prompt you to choose:
+   - **Install for this user only** (Installs to `~/Library/Screen Savers/`)
+   - **Install for all users** (Installs to `/Library/Screen Savers/`, requires administrator password)
 
-Unzip it, then move `Splatoon3Screensaver.saver` into:
+3. **Clear Quarantine Flag**: Because this screensaver is compiled outside the Mac App Store, macOS Gatekeeper may block it from running. Open your **Terminal** app and run the appropriate command below based on your installation choice:
+   * **If installed for this user only**:
+     ```sh
+     xattr -cr ~/Library/Screen\ Savers/splatoon3-boot.saver
+     ```
+   * **If installed for all users**:
+     ```sh
+     sudo xattr -cr /Library/Screen\ Savers/splatoon3-boot.saver
+     ```
 
-```text
-~/Library/Screen Savers/
-```
-
-If Finder does not show that folder, press `Cmd + Shift + G` and paste the path
-above.
-
-Because this is distributed outside the Mac App Store, macOS may quarantine the
-downloaded bundle. If System Settings refuses to load it, run:
-
-```sh
-xattr -cr ~/Library/Screen\ Savers/Splatoon3Screensaver.saver
-```
-
-Then open System Settings and select:
-
-`Wallpaper / Screen Savers -> Splatoon 3 Boot`
-
-Click `Options` to configure FPS, render scale, palette mode, and custom colors.
-
-The installed bundle should live at:
-
-```text
-~/Library/Screen Savers/Splatoon3Screensaver.saver
-```
+4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize colors, frame rate, and render scale.
 
 ## Log Feedback
 
@@ -100,7 +87,7 @@ Build only:
 make
 ```
 
-Build a release zip locally:
+Build a distributable `.saver` artifact locally:
 
 ```sh
 make package
@@ -118,7 +105,7 @@ Clean build artifacts:
 make clean
 ```
 
-Tag pushes build and publish the release asset through GitHub Actions:
+Tag pushes build and upload the `.saver` workflow artifact through GitHub Actions:
 
 ```sh
 git tag v1.0.0
