@@ -27,7 +27,6 @@ Main features:
 - Configurable internal render scale: 0.5x to 1.5x.
 - Palette modes: random on launch, timed cycle, Splatoon 1, Splatoon 2,
   Splatoon 3, or custom warm/cool colors.
-- Bundled thumbnail images for System Settings.
 - No sound.
 
 ## Getting Started

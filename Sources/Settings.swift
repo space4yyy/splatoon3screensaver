@@ -1,7 +1,7 @@
 import AppKit
 import ScreenSaver
 
-struct ScreensaverSettings {
+struct ScreensaverSettings: Equatable {
     static let moduleName = "ink.space4.Splatoon3Screensaver"
 
     var fpsCap: Int
@@ -56,6 +56,14 @@ struct ScreensaverSettings {
         d.set(customWarm.hexString, forKey: "customWarm")
         d.set(customCool.hexString, forKey: "customCool")
         d.synchronize()
+    }
+
+    static func == (lhs: ScreensaverSettings, rhs: ScreensaverSettings) -> Bool {
+        lhs.fpsCap == rhs.fpsCap
+            && lhs.renderScale == rhs.renderScale
+            && lhs.paletteMode == rhs.paletteMode
+            && lhs.customWarm.hexString == rhs.customWarm.hexString
+            && lhs.customCool.hexString == rhs.customCool.hexString
     }
 }
 

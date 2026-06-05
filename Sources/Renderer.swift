@@ -53,7 +53,7 @@ final class SplatoonRenderer: NSObject {
         self.resourceBundle = resourceBundle
         self.settings = ScreensaverSettings.load()
         super.init()
-        AppLog.renderer.info("Renderer initialized, resourceBundle=\(resourceBundle.bundleURL.path, privacy: .public)")
+        AppLog.renderer.debug("Renderer initialized, resourceBundle=\(resourceBundle.bundleURL.path, privacy: .public)")
         buildResources()
         bubbleMask = makeBubbleMaskTexture()
         if bubbleMask == nil {
@@ -84,7 +84,7 @@ final class SplatoonRenderer: NSObject {
         }
         
         buildResources()
-        AppLog.renderer.info("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), resolvedPalette=\(self.resolvedPaletteMode)")
+        AppLog.renderer.debug("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), resolvedPalette=\(self.resolvedPaletteMode)")
     }
 
     func handleResize(to size: CGSize) {
@@ -124,7 +124,7 @@ final class SplatoonRenderer: NSObject {
         AppLog.renderer.debug("Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
         #endif
         if loggedInitialFrames < 3 {
-            AppLog.renderer.info("Drawing frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
+            AppLog.renderer.debug("Drawing frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
             loggedInitialFrames += 1
         }
 

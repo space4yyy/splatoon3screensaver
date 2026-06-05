@@ -15,14 +15,12 @@ MIN_MACOS := 13.0
 
 all: $(BUNDLE)
 
-$(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources/bubble-mask.raw Resources/thumbnail.png Resources/thumbnail@2x.png
+$(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources/bubble-mask.raw
 	@command -v xcrun >/dev/null || (echo "xcrun is required. Install Xcode." && exit 1)
 	@xcrun --find metal >/dev/null || (echo "The Metal compiler is unavailable. Install full Xcode and run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" && exit 1)
 	@mkdir -p "$(MACOS)" "$(RESOURCES)" "$(BUILD_DIR)/module-cache"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
 	cp Resources/bubble-mask.raw "$(RESOURCES)/bubble-mask.raw"
-	cp Resources/thumbnail.png "$(RESOURCES)/thumbnail.png"
-	cp Resources/thumbnail@2x.png "$(RESOURCES)/thumbnail@2x.png"
 	xcrun -sdk macosx metal -std=macos-metal2.4 -mmacosx-version-min=$(MIN_MACOS) \
 		-fmodules-cache-path="$(BUILD_DIR)/module-cache" \
 		"$(METAL_SOURCE)" -o "$(RESOURCES)/default.metallib"
@@ -34,12 +32,19 @@ $(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources
 		-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore
 	cp "$(BUILD_DIR)/$(PRODUCT).dylib" "$(MACOS)/$(PRODUCT)"
 
-install: all
+install: package
 	@mkdir -p "$$HOME/Library/Screen Savers"
+	rm -rf "$$HOME/Library/Screen Savers/$(PRODUCT).saver"
 	rm -rf "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
-	ditto "$(BUNDLE)" "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
+	ditto "$(PACKAGE_BUNDLE)" "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
 	xattr -cr "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
+	-pkill -x "System Settings"
+	-pkill -x Wallpaper
+	-pkill -x legacyScreenSaver
+	rm -rf "$${TMPDIR%/T/}/C/com.apple.wallpaper.extension.legacy/com.apple.wallpaper.legacy.thumbnails"
 	@echo "Installed $(PACKAGE_NAME) to $$HOME/Library/Screen Savers"
+	@echo "Cleared Wallpaper screen saver thumbnail cache"
+	@echo "Closed System Settings and restarted Wallpaper processes so the new build is loaded"
 
 package: all
 	@mkdir -p "$(DIST_DIR)"

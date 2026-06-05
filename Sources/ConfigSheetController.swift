@@ -18,6 +18,7 @@ final class ConfigSheetController: NSWindowController {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         super.init(window: window)
         buildUI()
         load()
@@ -188,18 +189,25 @@ final class ConfigSheetController: NSWindowController {
     }
 
     @objc private func cancel() {
-        originalSettings?.save()
-        onChange?()
-        guard let window = self.window else { return }
-        NSApp.endSheet(window)
-        window.close()
+        if let originalSettings, ScreensaverSettings.load() != originalSettings {
+            originalSettings.save()
+            onChange?()
+        }
+        endSheet()
     }
 
     @objc private func done() {
         save()
+        endSheet()
+    }
+
+    private func endSheet() {
         guard let window = self.window else { return }
-        NSApp.endSheet(window)
-        window.close()
+        if let parent = window.sheetParent {
+            parent.endSheet(window)
+        } else {
+            window.orderOut(nil)
+        }
     }
 
     private func save() {

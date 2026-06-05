@@ -141,7 +141,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         }
         RunLoop.main.add(timer, forMode: .common)
         renderTimer = timer
-        AppLog.renderer.info("Render timer started, interval=\(self.animationTimeInterval)")
+        AppLog.renderer.debug("Render timer started, interval=\(self.animationTimeInterval)")
     }
 
     private func renderFrame() {
@@ -162,7 +162,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override var hasConfigureSheet: Bool { true }
 
     public override var configureSheet: NSWindow? {
-        if configController == nil {
+        if configController?.window == nil {
             configController = ConfigSheetController()
         }
         configController?.load()
