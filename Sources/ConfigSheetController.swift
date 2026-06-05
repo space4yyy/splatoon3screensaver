@@ -190,22 +190,16 @@ final class ConfigSheetController: NSWindowController {
     @objc private func cancel() {
         originalSettings?.save()
         onChange?()
-        guard let window else { return }
-        if let parent = window.sheetParent {
-            parent.endSheet(window)
-        } else {
-            window.close()
-        }
+        guard let window = self.window else { return }
+        NSApp.endSheet(window)
+        window.close()
     }
 
     @objc private func done() {
         save()
-        guard let window else { return }
-        if let parent = window.sheetParent {
-            parent.endSheet(window)
-        } else {
-            window.close()
-        }
+        guard let window = self.window else { return }
+        NSApp.endSheet(window)
+        window.close()
     }
 
     private func save() {
