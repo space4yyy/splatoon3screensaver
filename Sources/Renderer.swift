@@ -20,6 +20,7 @@ final class SplatoonRenderer: NSObject {
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private weak var metalLayer: CAMetalLayer?
+    private let resourceBundle: Bundle
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
     private var sampler: MTLSamplerState?
@@ -40,15 +41,17 @@ final class SplatoonRenderer: NSObject {
 
     init?(
         layer: CAMetalLayer,
-        device: MTLDevice
+        device: MTLDevice,
+        resourceBundle: Bundle
     ) {
         guard let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
         self.metalLayer = layer
+        self.resourceBundle = resourceBundle
         self.settings = ScreensaverSettings.load()
         super.init()
-        AppLog.renderer.info("Renderer initialized")
+        AppLog.renderer.info("Renderer initialized, resourceBundle=\(resourceBundle.bundleURL.path, privacy: .public)")
         buildResources()
         bubbleMask = makeBubbleMaskTexture()
         if bubbleMask == nil {
@@ -159,7 +162,7 @@ final class SplatoonRenderer: NSObject {
             guard let url = resourceURL(name: "default", extension: "metallib"),
                   let lib = try? device.makeLibrary(URL: url)
             else {
-                AppLog.renderer.error("Failed to load default.metallib")
+                AppLog.renderer.error("Failed to load default.metallib from \(self.resourceBundle.bundleURL.path, privacy: .public)")
                 return
             }
             self.library = lib
@@ -283,7 +286,7 @@ final class SplatoonRenderer: NSObject {
               let data = try? Data(contentsOf: url),
               data.count == 256 * 128
         else {
-            AppLog.renderer.error("Failed to load bubble-mask.raw")
+            AppLog.renderer.error("Failed to load bubble-mask.raw from \(self.resourceBundle.bundleURL.path, privacy: .public)")
             return nil
         }
 
@@ -299,8 +302,7 @@ final class SplatoonRenderer: NSObject {
     }
 
     private func resourceURL(name: String, extension ext: String) -> URL? {
-        Bundle(for: SplatoonRenderer.self).url(forResource: name, withExtension: ext)
+        resourceBundle.url(forResource: name, withExtension: ext)
             ?? Bundle.main.url(forResource: name, withExtension: ext)
-            ?? Bundle.main.resourceURL?.appendingPathComponent("\(name).\(ext)")
     }
 }

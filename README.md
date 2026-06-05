@@ -32,13 +32,7 @@ Main features:
 
 ## Getting Started
 
-Download the latest release asset:
-
-`Splatoon3Screensaver.saver.zip`
-
-from:
-
-https://github.com/space4yyy/splatoon3screensaver/releases
+Download the latest release asset: [Splatoon3Screensaver.saver.zip](https://github.com/space4yyy/splatoon3screensaver/releases/latest/download/Splatoon3Screensaver.saver.zip)
 
 Unzip it, then move `Splatoon3Screensaver.saver` into:
 
@@ -81,13 +75,13 @@ ink.space4.Splatoon3Screensaver
 When asking a user to report an issue, have them reproduce it and run:
 
 ```sh
-log show --last 10m --predicate 'subsystem == "ink.space4.Splatoon3Screensaver"' --style compact
+log show --last 10m --predicate 'subsystem == "ink.space4.Splatoon3Screensaver"' --style compact --info --debug
 ```
 
 For live logs during development:
 
 ```sh
-log stream --predicate 'subsystem == "ink.space4.Splatoon3Screensaver"' --style compact
+log stream --predicate 'subsystem == "ink.space4.Splatoon3Screensaver"' --style compact --info --debug
 ```
 
 Users can also open Console.app and search for
@@ -152,7 +146,6 @@ ink.space4.Splatoon3Screensaver
 
 ## Credits
 
-- Original Shadertoy shader: `f3SGWc`, "Splatoon 3 Boot animation" by Nick27:
-  https://www.shadertoy.com/view/f3SGWc
+- Original Shadertoy shader: `f3SGWc`, "[Splatoon 3 Boot animation](https://www.shadertoy.com/view/f3SGWc)" by [Nick27](https://www.shadertoy.com/user/Nick27)
 - Splatoon is a trademark of Nintendo.
 - This repository is an unofficial fan project.

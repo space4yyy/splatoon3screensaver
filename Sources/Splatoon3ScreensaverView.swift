@@ -67,7 +67,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         let drawableSize = CGSize(width: size.width * scale, height: size.height * scale)
         metalLayer.drawableSize = drawableSize
         
-        renderer = SplatoonRenderer(layer: metalLayer, device: device)
+        renderer = SplatoonRenderer(
+            layer: metalLayer,
+            device: device,
+            resourceBundle: Bundle(for: type(of: self))
+        )
         renderer?.handleResize(to: drawableSize)
     }
 
