@@ -148,9 +148,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var shouldRenderFrame: Bool {
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        if !isPreview {
-            guard window.occlusionState.contains(.visible) else { return false }
-        }
         return !isPreview || isSystemSettingsFrontmost
     }
 
