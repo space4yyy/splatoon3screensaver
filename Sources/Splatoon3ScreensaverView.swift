@@ -19,6 +19,8 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var metalLayer: CAMetalLayer?
     private var renderer: SplatoonRenderer?
     private var configController: ConfigSheetController?
+    private var renderTimer: Timer?
+    private var isRendering = false
 
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -54,8 +56,8 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         
         let screen = window?.screen ?? NSScreen.main
         guard let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() else {
-            AppLog.renderer.error("No Metal device is available for this screen")
-            return
+            AppLog.renderer.fault("No Metal device is available for this screen. Terminating screensaver process.")
+            exit(0)
         }
         metalLayer.device = device
         
@@ -72,6 +74,17 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             device: device,
             resourceBundle: Bundle(for: type(of: self))
         )
+        
+        if renderer == nil {
+            AppLog.renderer.fault("Failed to initialize SplatoonRenderer. Terminating screensaver process.")
+            exit(0)
+        }
+        
+        if renderer?.hasFatalError == true {
+            AppLog.renderer.fault("Fatal error during renderer initialization (missing resources or pipeline compilation failure). Terminating screensaver process.")
+            exit(0)
+        }
+        
         renderer?.handleResize(to: drawableSize)
     }
 
@@ -108,14 +121,40 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             // nextDrawable() to block and sync cleanly to the monitor's physical VSync.
             self.animationTimeInterval = 1.0 / 240.0
         }
+        startRenderTimer()
     }
 
     public override func stopAnimation() {
+        renderTimer?.invalidate()
+        renderTimer = nil
         super.stopAnimation()
     }
 
     public override func animateOneFrame() {
+        renderFrame()
+    }
+
+    private func startRenderTimer() {
+        renderTimer?.invalidate()
+        let timer = Timer(timeInterval: animationTimeInterval, repeats: true) { [weak self] _ in
+            self?.renderFrame()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        renderTimer = timer
+        AppLog.renderer.info("Render timer started, interval=\(self.animationTimeInterval)")
+    }
+
+    private func renderFrame() {
+        if window != nil {
+            if renderer == nil || renderer?.hasFatalError == true {
+                AppLog.renderer.fault("Renderer is nil or has fatal error. Terminating process to prevent log/resource loops.")
+                exit(0)
+            }
+        }
+        guard !isRendering else { return }
+        isRendering = true
         renderer?.draw()
+        isRendering = false
     }
 
     public override var hasConfigureSheet: Bool { true }

@@ -37,7 +37,9 @@ final class SplatoonRenderer: NSObject {
     private var startTime = CACurrentMediaTime()
     private var lastTime = CACurrentMediaTime()
     private var frame: Int32 = 0
+    private var loggedInitialFrames = 0
     private var resolvedPaletteMode: Int = 0
+    private(set) var hasFatalError = false
 
     init?(
         layer: CAMetalLayer,
@@ -56,6 +58,7 @@ final class SplatoonRenderer: NSObject {
         bubbleMask = makeBubbleMaskTexture()
         if bubbleMask == nil {
             AppLog.renderer.error("Bubble mask texture was not loaded")
+            hasFatalError = true
         }
         reloadSettings(resetSimulation: true)
     }
@@ -64,6 +67,7 @@ final class SplatoonRenderer: NSObject {
         settings = ScreensaverSettings.load()
         if resetSimulation {
             frame = 0
+            loggedInitialFrames = 0
             startTime = CACurrentMediaTime()
             lastTime = startTime
             recreateTextures()
@@ -88,6 +92,7 @@ final class SplatoonRenderer: NSObject {
     }
 
     func draw() {
+        if hasFatalError { return }
         guard let metalLayer = self.metalLayer,
               let drawable = metalLayer.nextDrawable(),
               let commandBuffer = queue.makeCommandBuffer()
@@ -118,6 +123,10 @@ final class SplatoonRenderer: NSObject {
         #if DEBUG
         AppLog.renderer.debug("Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
         #endif
+        if loggedInitialFrames < 3 {
+            AppLog.renderer.info("Drawing frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
+            loggedInitialFrames += 1
+        }
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = drawable.texture
@@ -132,10 +141,12 @@ final class SplatoonRenderer: NSObject {
 
         guard let imagePipeline = pipelines["imagePass"] else {
             AppLog.renderer.error("Missing image pipeline imagePass")
+            hasFatalError = true
             return
         }
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             AppLog.renderer.error("Could not create drawable encoder")
+            hasFatalError = true
             return
         }
         uniforms.resolution = SIMD4(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height), 1.0, settings.renderScale)
@@ -163,6 +174,7 @@ final class SplatoonRenderer: NSObject {
                   let lib = try? device.makeLibrary(URL: url)
             else {
                 AppLog.renderer.error("Failed to load default.metallib from \(self.resourceBundle.bundleURL.path, privacy: .public)")
+                hasFatalError = true
                 return
             }
             self.library = lib
@@ -182,6 +194,7 @@ final class SplatoonRenderer: NSObject {
                     pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
                 } catch {
                     AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                    hasFatalError = true
                 }
             }
         }
@@ -196,6 +209,7 @@ final class SplatoonRenderer: NSObject {
                 pipelines["imagePass"] = try device.makeRenderPipelineState(descriptor: imageDescriptor)
             } catch {
                 AppLog.renderer.error("Failed image pipeline imagePass: \(String(describing: error), privacy: .public)")
+                hasFatalError = true
             }
         }
 
@@ -252,10 +266,12 @@ final class SplatoonRenderer: NSObject {
     ) {
         guard let target else {
             AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing target")
+            hasFatalError = true
             return
         }
         guard let pipeline = pipelines[pipelineName] else {
             AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing pipeline")
+            hasFatalError = true
             return
         }
         uniforms.resolution = SIMD4(Float(target.width), Float(target.height), 1.0, settings.renderScale)
@@ -268,6 +284,7 @@ final class SplatoonRenderer: NSObject {
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
+            hasFatalError = true
             return
         }
         encoder.setRenderPipelineState(pipeline)
@@ -302,7 +319,18 @@ final class SplatoonRenderer: NSObject {
     }
 
     private func resourceURL(name: String, extension ext: String) -> URL? {
-        resourceBundle.url(forResource: name, withExtension: ext)
-            ?? Bundle.main.url(forResource: name, withExtension: ext)
+        let fileName = "\(name).\(ext)"
+        let candidates = [
+            resourceBundle.url(forResource: name, withExtension: ext),
+            resourceBundle.resourceURL?.appendingPathComponent(fileName),
+            resourceBundle.bundleURL
+                .appendingPathComponent("Contents")
+                .appendingPathComponent("Resources")
+                .appendingPathComponent(fileName),
+            Bundle.main.url(forResource: name, withExtension: ext),
+            Bundle.main.resourceURL?.appendingPathComponent(fileName),
+        ]
+
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
