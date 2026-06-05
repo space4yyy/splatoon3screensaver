@@ -160,7 +160,7 @@ final class ConfigSheetController: NSWindowController {
         window.setFrame(finalFrame, display: true, animate: animate)
     }
 
-    private func load() {
+    func load() {
         let s = ScreensaverSettings.load()
         originalSettings = s
         fpsPopup.selectItem(at: [30, 60, 120, 0].firstIndex(of: s.fpsCap) ?? 1)

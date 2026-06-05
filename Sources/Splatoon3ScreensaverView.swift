@@ -165,6 +165,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         if configController == nil {
             configController = ConfigSheetController()
         }
+        configController?.load()
         configController?.onChange = { [weak self] in
             self?.renderer?.reloadSettings(resetSimulation: true)
         }
