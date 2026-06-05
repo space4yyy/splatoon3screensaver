@@ -32,23 +32,37 @@ Main features:
 
 ## Getting Started
 
-Build and install for the current macOS user:
+Download the latest release asset:
+
+`Splatoon3Screensaver.saver.zip`
+
+from:
+
+https://github.com/space4yyy/splatoon3screensaver/releases
+
+Unzip it, then move `Splatoon3Screensaver.saver` into:
+
+```text
+~/Library/Screen Savers/
+```
+
+If Finder does not show that folder, press `Cmd + Shift + G` and paste the path
+above.
+
+Because this is distributed outside the Mac App Store, macOS may quarantine the
+downloaded bundle. If System Settings refuses to load it, run:
 
 ```sh
-make install
+xattr -cr ~/Library/Screen\ Savers/Splatoon3Screensaver.saver
 ```
 
 Then open System Settings and select:
 
 `Wallpaper / Screen Savers -> Splatoon 3 Boot`
 
-If macOS blocks a locally built copy, clear quarantine:
+Click `Options` to configure FPS, render scale, palette mode, and custom colors.
 
-```sh
-xattr -cr ~/Library/Screen\ Savers/Splatoon3Screensaver.saver
-```
-
-The installed bundle lives at:
+The installed bundle should live at:
 
 ```text
 ~/Library/Screen Savers/Splatoon3Screensaver.saver
@@ -92,7 +106,13 @@ Build only:
 make
 ```
 
-Install:
+Build a release zip locally:
+
+```sh
+make package
+```
+
+Install a local build for the current user:
 
 ```sh
 make install
@@ -102,6 +122,13 @@ Clean build artifacts:
 
 ```sh
 make clean
+```
+
+Tag pushes build and publish the release asset through GitHub Actions:
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 Important files:
@@ -125,6 +152,7 @@ ink.space4.Splatoon3Screensaver
 
 ## Credits
 
-- Original Shadertoy shader: `f3SGWc`, "Splatoon 3 Boot animation" by Nick27.
+- Original Shadertoy shader: `f3SGWc`, "Splatoon 3 Boot animation" by Nick27:
+  https://www.shadertoy.com/view/f3SGWc
 - Splatoon is a trademark of Nintendo.
 - This repository is an unofficial fan project.

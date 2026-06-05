@@ -4,11 +4,13 @@ BUNDLE := $(BUILD_DIR)/$(PRODUCT).saver
 CONTENTS := $(BUNDLE)/Contents
 MACOS := $(CONTENTS)/MacOS
 RESOURCES := $(CONTENTS)/Resources
+DIST_DIR := dist
+PACKAGE := $(DIST_DIR)/$(PRODUCT).saver.zip
 SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/ConfigSheetController.swift Sources/Splatoon3ScreensaverView.swift
 METAL_SOURCE := Shaders/Splatoon3.metal
 MIN_MACOS := 13.0
 
-.PHONY: all clean install
+.PHONY: all clean install package
 
 all: $(BUNDLE)
 
@@ -38,5 +40,11 @@ install: all
 	xattr -cr "$$HOME/Library/Screen Savers/$(PRODUCT).saver"
 	@echo "Installed $(PRODUCT).saver to $$HOME/Library/Screen Savers"
 
+package: all
+	@mkdir -p "$(DIST_DIR)"
+	rm -f "$(PACKAGE)"
+	ditto -c -k --keepParent "$(BUNDLE)" "$(PACKAGE)"
+	@echo "Packaged $(PACKAGE)"
+
 clean:
-	rm -rf "$(BUILD_DIR)"
+	rm -rf "$(BUILD_DIR)" "$(DIST_DIR)"
