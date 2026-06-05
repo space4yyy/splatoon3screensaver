@@ -11,13 +11,14 @@ SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/Con
 METAL_SOURCE := Shaders/Splatoon3.metal
 MIN_MACOS := 13.0
 
-.PHONY: all clean install package
+.PHONY: all clean install package FORCE
 
 all: $(BUNDLE)
 
-$(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources/bubble-mask.raw
+$(BUNDLE): FORCE
 	@command -v xcrun >/dev/null || (echo "xcrun is required. Install Xcode." && exit 1)
 	@xcrun --find metal >/dev/null || (echo "The Metal compiler is unavailable. Install full Xcode and run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" && exit 1)
+	rm -rf "$(BUILD_DIR)/module-cache"
 	@mkdir -p "$(MACOS)" "$(RESOURCES)" "$(BUILD_DIR)/module-cache"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
 	cp Resources/bubble-mask.raw "$(RESOURCES)/bubble-mask.raw"
@@ -54,3 +55,5 @@ package: all
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(DIST_DIR)"
+
+FORCE:

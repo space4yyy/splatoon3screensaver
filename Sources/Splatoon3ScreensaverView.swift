@@ -19,8 +19,10 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var metalLayer: CAMetalLayer?
     private var renderer: SplatoonRenderer?
     private var configController: ConfigSheetController?
-    private var renderTimer: Timer?
     private var isRendering = false
+    private var activeAnimationInterval: TimeInterval = 1.0 / 60.0
+    private let inactivePreviewAnimationInterval: TimeInterval = 1.0
+    private var didTrySetupRenderer = false
 
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -52,6 +54,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func setupRenderer() {
+        didTrySetupRenderer = true
         guard let metalLayer = self.metalLayer else { return }
         
         let screen = window?.screen ?? NSScreen.main
@@ -115,18 +118,16 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         renderer?.reloadSettings(resetSimulation: false)
         let fps = ScreensaverSettings.load().fpsCap
         if fps > 0 {
-            self.animationTimeInterval = 1.0 / Double(fps)
+            activeAnimationInterval = 1.0 / Double(fps)
         } else {
             // Display sync mode: request up to 240fps on the timer, allowing CAMetalLayer
             // nextDrawable() to block and sync cleanly to the monitor's physical VSync.
-            self.animationTimeInterval = 1.0 / 240.0
+            activeAnimationInterval = 1.0 / 240.0
         }
-        startRenderTimer()
+        self.animationTimeInterval = activeAnimationInterval
     }
 
     public override func stopAnimation() {
-        renderTimer?.invalidate()
-        renderTimer = nil
         super.stopAnimation()
     }
 
@@ -134,29 +135,47 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         renderFrame()
     }
 
-    private func startRenderTimer() {
-        renderTimer?.invalidate()
-        let timer = Timer(timeInterval: animationTimeInterval, repeats: true) { [weak self] _ in
-            self?.renderFrame()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        renderTimer = timer
-        AppLog.renderer.debug("Render timer started, interval=\(self.animationTimeInterval)")
-    }
-
     private func renderFrame() {
-        if window != nil {
+        updateAnimationIntervalForCurrentVisibility()
+        if window != nil && didTrySetupRenderer {
             if renderer == nil || renderer?.hasFatalError == true {
-                AppLog.renderer.fault("Renderer is nil or has fatal error. Terminating process to prevent log/resource loops.")
+                AppLog.renderer.fault("Renderer failed to initialize or has fatal error. Terminating process.")
                 exit(0)
             }
         }
+        guard shouldRenderFrame else { return }
         guard !isRendering else { return }
         isRendering = true
         autoreleasepool {
             renderer?.draw()
         }
         isRendering = false
+    }
+
+    private var shouldRenderFrame: Bool {
+        guard let window else { return false }
+        guard window.isVisible && !bounds.isEmpty else { return false }
+        return !isPreview || isSystemSettingsFrontmost
+    }
+
+    private func updateAnimationIntervalForCurrentVisibility() {
+        let targetInterval = shouldRenderFrame ? activeAnimationInterval : inactivePreviewAnimationInterval
+        if abs(animationTimeInterval - targetInterval) > .ulpOfOne {
+            animationTimeInterval = targetInterval
+        }
+    }
+
+    private var isSystemSettingsFrontmost: Bool {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            return false
+        }
+
+        if frontmostApp.bundleIdentifier == "com.apple.systempreferences" {
+            return true
+        }
+
+        return frontmostApp.localizedName == "System Settings"
+            || frontmostApp.localizedName == "系统设置"
     }
 
     public override var hasConfigureSheet: Bool { true }
