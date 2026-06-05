@@ -153,7 +153,9 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         }
         guard !isRendering else { return }
         isRendering = true
-        renderer?.draw()
+        autoreleasepool {
+            renderer?.draw()
+        }
         isRendering = false
     }
 
