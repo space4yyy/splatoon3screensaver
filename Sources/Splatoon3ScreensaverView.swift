@@ -53,7 +53,10 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         guard let metalLayer = self.metalLayer else { return }
         
         let screen = window?.screen ?? NSScreen.main
-        let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() ?? MTLCreateSystemDefaultDevice()
+        guard let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() else {
+            AppLog.renderer.error("No Metal device is available for this screen")
+            return
+        }
         metalLayer.device = device
         
         // Ensure scale is correct initially
@@ -64,7 +67,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         let drawableSize = CGSize(width: size.width * scale, height: size.height * scale)
         metalLayer.drawableSize = drawableSize
         
-        renderer = SplatoonRenderer(layer: metalLayer, device: device!, waitForFrameCompletion: false)
+        renderer = SplatoonRenderer(layer: metalLayer, device: device)
         renderer?.handleResize(to: drawableSize)
     }
 

@@ -1,6 +1,6 @@
 import Foundation
 import Metal
-import MetalKit
+import OSLog
 import QuartzCore
 
 private struct ShaderUniforms {
@@ -12,41 +12,17 @@ private struct ShaderUniforms {
     var state: SIMD4<Int32>
 }
 
-enum DebugLog {
-    static let url = URL(fileURLWithPath: "/tmp/Splatoon3Screensaver.log")
-
-    static func reset() {
-        try? "Splatoon3Screensaver log\n".write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    static func write(_ message: String) {
-        let line = "\(Date()) \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if FileManager.default.fileExists(atPath: url.path),
-           let handle = try? FileHandle(forWritingTo: url) {
-            try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-        } else {
-            try? data.write(to: url)
-        }
-    }
+enum AppLog {
+    static let renderer = Logger(subsystem: ScreensaverSettings.moduleName, category: "renderer")
 }
 
 final class SplatoonRenderer: NSObject {
-    enum SettingsSource {
-        case screenSaverDefaults
-        case fixed(ScreensaverSettings)
-    }
-
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private weak var metalLayer: CAMetalLayer?
-    private let settingsSource: SettingsSource
-    private let waitForFrameCompletion: Bool
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
-    private var sampler: MTLSamplerState!
+    private var sampler: MTLSamplerState?
     private var library: MTLLibrary?
     private var bufferA: MTLTexture?
     private var bufferB: MTLTexture?
@@ -60,46 +36,31 @@ final class SplatoonRenderer: NSObject {
     private var startTime = CACurrentMediaTime()
     private var lastTime = CACurrentMediaTime()
     private var frame: Int32 = 0
-    private var lastDrawableSize: CGSize = .zero
-    private var loggedDrawFrames = 0
     private var resolvedPaletteMode: Int = 0
 
     init?(
         layer: CAMetalLayer,
-        device: MTLDevice,
-        settingsSource: SettingsSource = .screenSaverDefaults,
-        waitForFrameCompletion: Bool = false
+        device: MTLDevice
     ) {
         guard let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
         self.metalLayer = layer
-        self.settingsSource = settingsSource
-        self.waitForFrameCompletion = waitForFrameCompletion
-        switch settingsSource {
-        case .screenSaverDefaults:
-            self.settings = ScreensaverSettings.load()
-        case .fixed(let settings):
-            self.settings = settings
-        }
+        self.settings = ScreensaverSettings.load()
         super.init()
-        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] init waitForFrameCompletion=\(waitForFrameCompletion)")
+        AppLog.renderer.info("Renderer initialized")
         buildResources()
         bubbleMask = makeBubbleMaskTexture()
-        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] bubbleMaskLoaded=\(bubbleMask != nil)")
+        if bubbleMask == nil {
+            AppLog.renderer.error("Bubble mask texture was not loaded")
+        }
         reloadSettings(resetSimulation: true)
     }
 
     func reloadSettings(resetSimulation: Bool) {
-        switch settingsSource {
-        case .screenSaverDefaults:
-            settings = ScreensaverSettings.load()
-        case .fixed(let fixed):
-            settings = fixed
-        }
+        settings = ScreensaverSettings.load()
         if resetSimulation {
             frame = 0
-            loggedDrawFrames = 0
             startTime = CACurrentMediaTime()
             lastTime = startTime
             recreateTextures()
@@ -116,11 +77,10 @@ final class SplatoonRenderer: NSObject {
         }
         
         buildResources()
-        DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] reloadSettings reset=\(resetSimulation) fps=\(settings.fpsCap) scale=\(settings.renderScale) palette=\(settings.paletteMode) resolvedPalette=\(resolvedPaletteMode)")
+        AppLog.renderer.info("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), resolvedPalette=\(self.resolvedPaletteMode)")
     }
 
     func handleResize(to size: CGSize) {
-        lastDrawableSize = size
         recreateTextures()
     }
 
@@ -129,10 +89,9 @@ final class SplatoonRenderer: NSObject {
               let drawable = metalLayer.nextDrawable(),
               let commandBuffer = queue.makeCommandBuffer()
         else {
-            if loggedDrawFrames < 20 {
-                DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] draw skipped layer=\(self.metalLayer != nil)")
-                loggedDrawFrames += 1
-            }
+            #if DEBUG
+            AppLog.renderer.debug("Draw skipped; layerExists=\(self.metalLayer != nil)")
+            #endif
             return
         }
 
@@ -153,10 +112,9 @@ final class SplatoonRenderer: NSObject {
             customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
             state: SIMD4(frame, Int32(resolvedPaletteMode), 0, 0)
         )
-        if loggedDrawFrames < 20 {
-            DebugLog.write("renderer [\(Unmanaged.passUnretained(self).toOpaque())] draw frame=\(frame) drawableSize=\(metalLayer.drawableSize) bounds=\(metalLayer.bounds) buffer=\(bufferWidth)x\(bufferHeight)")
-            loggedDrawFrames += 1
-        }
+        #if DEBUG
+        AppLog.renderer.debug("Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
+        #endif
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = drawable.texture
@@ -170,11 +128,11 @@ final class SplatoonRenderer: NSObject {
         encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
 
         guard let imagePipeline = pipelines["imagePass"] else {
-            DebugLog.write("missing image pipeline imagePass")
+            AppLog.renderer.error("Missing image pipeline imagePass")
             return
         }
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            DebugLog.write("missing drawable encoder")
+            AppLog.renderer.error("Could not create drawable encoder")
             return
         }
         uniforms.resolution = SIMD4(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height), 1.0, settings.renderScale)
@@ -188,9 +146,6 @@ final class SplatoonRenderer: NSObject {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
-        if waitForFrameCompletion {
-            commandBuffer.waitUntilCompleted()
-        }
         swap(&bufferCRead, &bufferCWrite)
         swap(&bufferDRead, &bufferDWrite)
         frame += 1
@@ -204,7 +159,7 @@ final class SplatoonRenderer: NSObject {
             guard let url = resourceURL(name: "default", extension: "metallib"),
                   let lib = try? device.makeLibrary(URL: url)
             else {
-                DebugLog.write("failed to load default.metallib")
+                AppLog.renderer.error("Failed to load default.metallib")
                 return
             }
             self.library = lib
@@ -223,7 +178,7 @@ final class SplatoonRenderer: NSObject {
                 do {
                     pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
                 } catch {
-                    DebugLog.write("failed pipeline \(name): \(error)")
+                    AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
                 }
             }
         }
@@ -237,17 +192,17 @@ final class SplatoonRenderer: NSObject {
             do {
                 pipelines["imagePass"] = try device.makeRenderPipelineState(descriptor: imageDescriptor)
             } catch {
-                DebugLog.write("failed image pipeline imagePass: \(error)")
+                AppLog.renderer.error("Failed image pipeline imagePass: \(String(describing: error), privacy: .public)")
             }
         }
 
-        if sampler == nil {
+        if self.sampler == nil {
             let samplerDescriptor = MTLSamplerDescriptor()
             samplerDescriptor.minFilter = .linear
             samplerDescriptor.magFilter = .linear
             samplerDescriptor.sAddressMode = .clampToEdge
             samplerDescriptor.tAddressMode = .clampToEdge
-            sampler = device.makeSamplerState(descriptor: samplerDescriptor)
+            self.sampler = device.makeSamplerState(descriptor: samplerDescriptor)
         }
     }
 
@@ -268,7 +223,6 @@ final class SplatoonRenderer: NSObject {
         bufferCWrite = device.makeTexture(descriptor: descriptor)
         bufferDRead = device.makeTexture(descriptor: descriptor)
         bufferDWrite = device.makeTexture(descriptor: descriptor)
-        lastDrawableSize = metalLayer?.drawableSize ?? .zero
         clearTextures()
     }
 
@@ -294,11 +248,11 @@ final class SplatoonRenderer: NSObject {
         commandBuffer: MTLCommandBuffer
     ) {
         guard let target else {
-            DebugLog.write("offscreen \(pipelineName) missing target")
+            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing target")
             return
         }
         guard let pipeline = pipelines[pipelineName] else {
-            DebugLog.write("offscreen \(pipelineName) missing pipeline")
+            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing pipeline")
             return
         }
         uniforms.resolution = SIMD4(Float(target.width), Float(target.height), 1.0, settings.renderScale)
@@ -310,7 +264,7 @@ final class SplatoonRenderer: NSObject {
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            DebugLog.write("offscreen \(pipelineName) missing encoder")
+            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
             return
         }
         encoder.setRenderPipelineState(pipeline)
@@ -329,17 +283,17 @@ final class SplatoonRenderer: NSObject {
               let data = try? Data(contentsOf: url),
               data.count == 256 * 128
         else {
-            DebugLog.write("failed to load bubble-mask.raw")
+            AppLog.renderer.error("Failed to load bubble-mask.raw")
             return nil
         }
-        DebugLog.write("loaded bubble-mask.raw \(url.path)")
 
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: 256, height: 128, mipmapped: false)
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .managed
         guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
         data.withUnsafeBytes { raw in
-            texture.replace(region: MTLRegionMake2D(0, 0, 256, 128), mipmapLevel: 0, withBytes: raw.baseAddress!, bytesPerRow: 256)
+            guard let baseAddress = raw.baseAddress else { return }
+            texture.replace(region: MTLRegionMake2D(0, 0, 256, 128), mipmapLevel: 0, withBytes: baseAddress, bytesPerRow: 256)
         }
         return texture
     }

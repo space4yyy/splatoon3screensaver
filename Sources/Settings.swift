@@ -2,7 +2,7 @@ import AppKit
 import ScreenSaver
 
 struct ScreensaverSettings {
-    static let moduleName = "dev.space4.Splatoon3Screensaver"
+    static let moduleName = "ink.space4.Splatoon3Screensaver"
 
     var fpsCap: Int
     var renderScale: Float
@@ -10,23 +10,38 @@ struct ScreensaverSettings {
     var customWarm: NSColor
     var customCool: NSColor
 
-    static var defaults: ScreenSaverDefaults {
-        let defaults = ScreenSaverDefaults(forModuleWithName: moduleName)!
-        defaults.register(defaults: [
+    static var registeredDefaults: [String: Any] {
+        [
             "fpsCap": 60,
             "renderScale": 1.0,
             "paletteMode": 0,
             "customWarm": "#BAFF0A",
             "customCool": "#1D0AFF"
-        ])
+        ]
+    }
+
+    static func makeDefaults() -> ScreenSaverDefaults? {
+        guard let defaults = ScreenSaverDefaults(forModuleWithName: moduleName) else {
+            AppLog.renderer.fault("Could not create ScreenSaverDefaults for \(moduleName, privacy: .public)")
+            return nil
+        }
+        defaults.register(defaults: registeredDefaults)
         return defaults
     }
 
     static func load() -> ScreensaverSettings {
-        let d = defaults
+        guard let d = makeDefaults() else {
+            return ScreensaverSettings(
+                fpsCap: registeredDefaults["fpsCap"] as? Int ?? 60,
+                renderScale: registeredDefaults["renderScale"] as? Float ?? 1.0,
+                paletteMode: registeredDefaults["paletteMode"] as? Int ?? 0,
+                customWarm: NSColor(hex: registeredDefaults["customWarm"] as? String ?? "#BAFF0A"),
+                customCool: NSColor(hex: registeredDefaults["customCool"] as? String ?? "#1D0AFF")
+            )
+        }
         return ScreensaverSettings(
             fpsCap: d.integer(forKey: "fpsCap"),
-            renderScale: max(0.35, min(1.5, d.float(forKey: "renderScale"))),
+            renderScale: max(0.5, min(1.5, d.float(forKey: "renderScale"))),
             paletteMode: d.integer(forKey: "paletteMode"),
             customWarm: NSColor(hex: d.string(forKey: "customWarm") ?? "#BAFF0A"),
             customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF")
@@ -34,25 +49,13 @@ struct ScreensaverSettings {
     }
 
     func save() {
-        let d = Self.defaults
+        guard let d = Self.makeDefaults() else { return }
         d.set(fpsCap, forKey: "fpsCap")
         d.set(renderScale, forKey: "renderScale")
         d.set(paletteMode, forKey: "paletteMode")
         d.set(customWarm.hexString, forKey: "customWarm")
         d.set(customCool.hexString, forKey: "customCool")
         d.synchronize()
-    }
-}
-
-extension ScreensaverSettings {
-    static func previewDefaults() -> ScreensaverSettings {
-        ScreensaverSettings(
-            fpsCap: 60,
-            renderScale: 1.0,
-            paletteMode: 0,
-            customWarm: NSColor(hex: "#BAFF0A"),
-            customCool: NSColor(hex: "#1D0AFF")
-        )
     }
 }
 

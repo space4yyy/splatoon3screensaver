@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>Splatoon3Screensaver</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.space4.Splatoon3Screensaver</string>
+	<string>ink.space4.Splatoon3Screensaver</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

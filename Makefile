@@ -28,7 +28,7 @@ $(BUNDLE): $(SAVER_SWIFT_SOURCES) $(METAL_SOURCE) Resources/Info.plist Resources
 		-emit-library -module-name $(PRODUCT) \
 		-o "$(BUILD_DIR)/$(PRODUCT).dylib" \
 		$(SAVER_SWIFT_SOURCES) \
-		-framework AppKit -framework ScreenSaver -framework Metal -framework MetalKit -framework QuartzCore
+		-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore
 	cp "$(BUILD_DIR)/$(PRODUCT).dylib" "$(MACOS)/$(PRODUCT)"
 
 install: all
