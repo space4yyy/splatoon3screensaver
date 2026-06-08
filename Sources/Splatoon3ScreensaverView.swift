@@ -20,17 +20,25 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var renderer: SplatoonRenderer?
     private var configController: ConfigSheetController?
     private var isRendering = false
+    private var animationActive = false
     private var activeAnimationInterval: TimeInterval = 1.0 / 60.0
-    private let inactivePreviewAnimationInterval: TimeInterval = 1.0
+    private let inactiveAnimationInterval: TimeInterval = 10.0
 
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
         setupLayer()
+        observeLifecycleNotifications()
     }
 
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupLayer()
+        observeLifecycleNotifications()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     private func setupLayer() {
@@ -49,6 +57,8 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         super.viewDidMoveToWindow()
         if window != nil && renderer == nil {
             setupRenderer()
+        } else if window == nil {
+            suspendRendering(reason: "view removed from window")
         }
     }
 
@@ -113,6 +123,10 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
+        animationActive = true
+        if renderer == nil {
+            setupRenderer()
+        }
         renderer?.reloadSettings(resetSimulation: false)
         let fps = ScreensaverSettings.load().fpsCap
         if fps > 0 {
@@ -123,9 +137,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             activeAnimationInterval = 1.0 / 240.0
         }
         self.animationTimeInterval = activeAnimationInterval
+        AppLog.renderer.debug("Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
     }
 
     public override func stopAnimation() {
+        suspendRendering(reason: "stopAnimation")
         super.stopAnimation()
     }
 
@@ -146,29 +162,82 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private var shouldRenderFrame: Bool {
+        guard animationActive && isAnimating else { return false }
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        return !isPreview || isSystemSettingsFrontmost
+        return isHostVisibleToUser
     }
 
     private func updateAnimationIntervalForCurrentVisibility() {
-        let targetInterval = shouldRenderFrame ? activeAnimationInterval : inactivePreviewAnimationInterval
+        let targetInterval = shouldRenderFrame ? activeAnimationInterval : inactiveAnimationInterval
         if abs(animationTimeInterval - targetInterval) > .ulpOfOne {
             animationTimeInterval = targetInterval
         }
     }
 
-    private var isSystemSettingsFrontmost: Bool {
+    private var isHostVisibleToUser: Bool {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             return false
         }
 
-        if frontmostApp.bundleIdentifier == "com.apple.systempreferences" {
+        if frontmostApp.processIdentifier == ProcessInfo.processInfo.processIdentifier {
             return true
         }
 
-        return frontmostApp.localizedName == "System Settings"
+        return frontmostApp.bundleIdentifier == "com.apple.systempreferences"
+            || frontmostApp.localizedName == "System Settings"
             || frontmostApp.localizedName == "系统设置"
+    }
+
+    private func observeLifecycleNotifications() {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(screensDidSleep),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(workspaceApplicationVisibilityChanged),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationVisibilityChanged),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationVisibilityChanged),
+            name: NSApplication.didResignActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func screensDidSleep() {
+        suspendRendering(reason: "screens did sleep")
+    }
+
+    @objc private func applicationVisibilityChanged() {
+        updateAnimationIntervalForCurrentVisibility()
+    }
+
+    @objc private func workspaceApplicationVisibilityChanged() {
+        updateAnimationIntervalForCurrentVisibility()
+        if shouldRenderFrame {
+            renderFrame()
+        }
+    }
+
+    private func suspendRendering(reason: StaticString) {
+        animationActive = false
+        animationTimeInterval = inactiveAnimationInterval
+        renderer = nil
+        isRendering = false
+        AppLog.renderer.debug("Rendering suspended: \(reason)")
     }
 
     public override var hasConfigureSheet: Bool { true }

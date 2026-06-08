@@ -41,6 +41,7 @@ install: package
 	xattr -cr "$$HOME/Library/Screen Savers/$(PACKAGE_NAME)"
 	-pkill -x "System Settings"
 	-pkill -x Wallpaper
+	-pkill -x ScreenSaverEngine
 	-pkill -x legacyScreenSaver
 	rm -rf "$${TMPDIR%/T/}/C/com.apple.wallpaper.extension.legacy/com.apple.wallpaper.legacy.thumbnails"
 	@echo "Installed $(PACKAGE_NAME) to $$HOME/Library/Screen Savers"
