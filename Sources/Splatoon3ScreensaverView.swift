@@ -16,6 +16,8 @@ extension NSScreen {
 
 @objc(Splatoon3ScreensaverView)
 public final class Splatoon3ScreensaverView: ScreenSaverView {
+    private static var idleExitWorkItem: DispatchWorkItem?
+
     private var metalLayer: CAMetalLayer?
     private var renderer: SplatoonRenderer?
     private var configController: ConfigSheetController?
@@ -39,6 +41,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     deinit {
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 
     private func setupLayer() {
@@ -59,6 +62,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             setupRenderer()
         } else if window == nil {
             suspendRendering(reason: "view removed from window")
+            scheduleIdleExit()
         }
     }
 
@@ -123,6 +127,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
+        cancelIdleExit()
         animationActive = true
         if renderer == nil {
             setupRenderer()
@@ -137,11 +142,12 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             activeAnimationInterval = 1.0 / 240.0
         }
         self.animationTimeInterval = activeAnimationInterval
-        AppLog.renderer.debug("Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
+        AppLog.renderer.info("Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
     }
 
     public override func stopAnimation() {
         suspendRendering(reason: "stopAnimation")
+        scheduleIdleExit()
         super.stopAnimation()
     }
 
@@ -150,8 +156,9 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func renderFrame() {
-        updateAnimationIntervalForCurrentVisibility()
-        guard shouldRenderFrame else { return }
+        let canRender = shouldRenderFrame
+        updateAnimationInterval(canRender: canRender)
+        guard canRender else { return }
         guard let renderer = self.renderer, !renderer.hasFatalError else { return }
         guard !isRendering else { return }
         isRendering = true
@@ -165,17 +172,23 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         guard animationActive && isAnimating else { return false }
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        return !isPreview || isHostVisibleToUser
+        return !isPreview || isPreviewHostVisibleToUser
     }
 
-    private func updateAnimationIntervalForCurrentVisibility() {
-        let targetInterval = shouldRenderFrame ? activeAnimationInterval : inactiveAnimationInterval
+    private func updateAnimationInterval(canRender: Bool) {
+        if canRender {
+            cancelIdleExit()
+        } else {
+            scheduleIdleExit()
+        }
+
+        let targetInterval = canRender ? activeAnimationInterval : inactiveAnimationInterval
         if abs(animationTimeInterval - targetInterval) > .ulpOfOne {
             animationTimeInterval = targetInterval
         }
     }
 
-    private var isHostVisibleToUser: Bool {
+    private var isPreviewHostVisibleToUser: Bool {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             return false
         }
@@ -203,31 +216,37 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(applicationVisibilityChanged),
-            name: NSApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(applicationVisibilityChanged),
-            name: NSApplication.didResignActiveNotification,
-            object: nil
-        )
+
+        let distributedCenter = DistributedNotificationCenter.default()
+        for name in [
+            "com.apple.screensaver.willstop",
+            "com.apple.screensaver.didstop",
+            "com.apple.screenIsUnlocked"
+        ] {
+            distributedCenter.addObserver(
+                self,
+                selector: #selector(screenSaverDidStop),
+                name: Notification.Name(name),
+                object: nil,
+                suspensionBehavior: .deliverImmediately
+            )
+        }
     }
 
     @objc private func screensDidSleep() {
         suspendRendering(reason: "screens did sleep")
+        scheduleIdleExit()
     }
 
-    @objc private func applicationVisibilityChanged() {
-        updateAnimationIntervalForCurrentVisibility()
+    @objc private func screenSaverDidStop() {
+        stopAnimation()
     }
 
     @objc private func workspaceApplicationVisibilityChanged() {
-        updateAnimationIntervalForCurrentVisibility()
-        if shouldRenderFrame {
+        guard isPreview else { return }
+        let canRender = shouldRenderFrame
+        updateAnimationInterval(canRender: canRender)
+        if canRender {
             renderFrame()
         }
     }
@@ -237,7 +256,22 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         animationTimeInterval = inactiveAnimationInterval
         renderer = nil
         isRendering = false
-        AppLog.renderer.debug("Rendering suspended: \(reason)")
+        AppLog.renderer.info("Rendering suspended: \(reason)")
+    }
+
+    private func cancelIdleExit() {
+        Self.idleExitWorkItem?.cancel()
+        Self.idleExitWorkItem = nil
+    }
+
+    private func scheduleIdleExit() {
+        guard Self.idleExitWorkItem == nil else { return }
+        let workItem = DispatchWorkItem {
+            AppLog.renderer.info("Idle screen saver host exiting")
+            exit(0)
+        }
+        Self.idleExitWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 65.0, execute: workItem)
     }
 
     public override var hasConfigureSheet: Bool { true }
