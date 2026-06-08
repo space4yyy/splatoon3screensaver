@@ -165,7 +165,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         guard animationActive && isAnimating else { return false }
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        return isHostVisibleToUser
+        return !isPreview || isHostVisibleToUser
     }
 
     private func updateAnimationIntervalForCurrentVisibility() {

@@ -84,7 +84,7 @@ final class SplatoonRenderer: NSObject {
         }
         
         buildResources()
-        AppLog.renderer.debug("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), resolvedPalette=\(self.resolvedPaletteMode)")
+        AppLog.renderer.debug("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), cycleSeconds=\(self.settings.paletteCycleSeconds), resolvedPalette=\(self.resolvedPaletteMode)")
     }
 
     func handleResize(to size: CGSize) {
@@ -118,7 +118,7 @@ final class SplatoonRenderer: NSObject {
             mouse: SIMD4<Float>(0, 0, 0, 0),
             customWarm: SIMD4(settings.customWarm.float3, delta),
             customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(resolvedPaletteMode), 0, 0)
+            state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), 0)
         )
         #if DEBUG
         AppLog.renderer.debug("Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")

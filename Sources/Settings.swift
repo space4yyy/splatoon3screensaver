@@ -7,6 +7,7 @@ struct ScreensaverSettings: Equatable {
     var fpsCap: Int
     var renderScale: Float
     var paletteMode: Int
+    var paletteCycleSeconds: Int
     var customWarm: NSColor
     var customCool: NSColor
 
@@ -15,6 +16,7 @@ struct ScreensaverSettings: Equatable {
             "fpsCap": 60,
             "renderScale": 1.0,
             "paletteMode": 0,
+            "paletteCycleSeconds": 60,
             "customWarm": "#BAFF0A",
             "customCool": "#1D0AFF"
         ]
@@ -35,14 +37,17 @@ struct ScreensaverSettings: Equatable {
                 fpsCap: registeredDefaults["fpsCap"] as? Int ?? 60,
                 renderScale: registeredDefaults["renderScale"] as? Float ?? 1.0,
                 paletteMode: registeredDefaults["paletteMode"] as? Int ?? 0,
+                paletteCycleSeconds: registeredDefaults["paletteCycleSeconds"] as? Int ?? 60,
                 customWarm: NSColor(hex: registeredDefaults["customWarm"] as? String ?? "#BAFF0A"),
                 customCool: NSColor(hex: registeredDefaults["customCool"] as? String ?? "#1D0AFF")
             )
         }
+        let storedCycleSeconds = d.integer(forKey: "paletteCycleSeconds")
         return ScreensaverSettings(
             fpsCap: d.integer(forKey: "fpsCap"),
             renderScale: max(0.5, min(1.5, d.float(forKey: "renderScale"))),
             paletteMode: d.integer(forKey: "paletteMode"),
+            paletteCycleSeconds: [30, 60, 90, 120].contains(storedCycleSeconds) ? storedCycleSeconds : 60,
             customWarm: NSColor(hex: d.string(forKey: "customWarm") ?? "#BAFF0A"),
             customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF")
         )
@@ -53,6 +58,7 @@ struct ScreensaverSettings: Equatable {
         d.set(fpsCap, forKey: "fpsCap")
         d.set(renderScale, forKey: "renderScale")
         d.set(paletteMode, forKey: "paletteMode")
+        d.set(paletteCycleSeconds, forKey: "paletteCycleSeconds")
         d.set(customWarm.hexString, forKey: "customWarm")
         d.set(customCool.hexString, forKey: "customCool")
         d.synchronize()
@@ -62,6 +68,7 @@ struct ScreensaverSettings: Equatable {
         lhs.fpsCap == rhs.fpsCap
             && lhs.renderScale == rhs.renderScale
             && lhs.paletteMode == rhs.paletteMode
+            && lhs.paletteCycleSeconds == rhs.paletteCycleSeconds
             && lhs.customWarm.hexString == rhs.customWarm.hexString
             && lhs.customCool.hexString == rhs.customCool.hexString
     }

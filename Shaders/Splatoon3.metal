@@ -184,7 +184,7 @@ fragment float4 passD(VertexOut in [[stage_in]],
     if (u.state.y == 1) {
         // Auto-cycling mode: animate phase based on absolute time
         float time = u.bufferResolution.w;
-        float T = 30.0; // cycle interval (30 seconds per game)
+        float T = max(1.0, float(u.state.z)); // cycle interval in seconds per game
         float t_trans = 4.0; // transition duration (4 seconds)
         float cycleIndex = floor(time / T);
         float rem = fmod(time, T);
@@ -335,4 +335,3 @@ fragment float4 imagePass(VertexOut in [[stage_in]],
     float3 coolC = mix(paletteCool(from, u) + bb * coolTint[from], paletteCool(to, u) + bb * coolTint[to], tt);
     return float4(toSRGB(mix(coolC, warmC, a)), 1.0);
 }
-

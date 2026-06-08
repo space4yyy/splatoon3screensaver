@@ -27,6 +27,8 @@ Main features:
 - Configurable internal render scale: 0.5x to 1.5x.
 - Palette modes: random on launch, timed cycle, Splatoon 1, Splatoon 2,
   Splatoon 3, or custom warm/cool colors.
+- Configurable timed cycle interval: 30, 60, 90, or 120 seconds, defaulting
+  to 60 seconds.
 - No sound.
 
 ## Getting Started
