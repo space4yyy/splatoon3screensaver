@@ -24,6 +24,12 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var activeAnimationInterval: TimeInterval = 1.0 / 60.0
     private let inactiveAnimationInterval: TimeInterval = 10.0
 
+    private static var instanceCounter = 0
+    private lazy var instanceID: Int = {
+        Self.instanceCounter += 1
+        return Self.instanceCounter
+    }()
+
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
         setupLayer()
@@ -133,6 +139,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
+        if animationActive { return }
         animationActive = true
         if renderer == nil {
             setupRenderer()
@@ -146,7 +153,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             activeAnimationInterval = 1.0 / 240.0
         }
         self.animationTimeInterval = activeAnimationInterval
-        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
     }
 
     public override func stopAnimation() {
@@ -261,10 +268,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func suspendRendering(reason: StaticString) {
+        if !animationActive && !isRendering { return }
         animationActive = false
         animationTimeInterval = inactiveAnimationInterval
         isRendering = false
-        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] Rendering suspended: \(reason, privacy: .public)")
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Rendering suspended: \(reason, privacy: .public)")
     }
 
     public override var hasConfigureSheet: Bool { true }
