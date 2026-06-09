@@ -47,7 +47,12 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private var screenID: String {
-        guard let displayID = window?.screen?.displayID else { return "Unknown" }
+        let screen = self.window?.screen ?? NSScreen.main
+        guard let displayID = screen?.displayID else { return "Unknown" }
+        
+        if CGDisplayIsBuiltin(displayID) != 0 {
+            return "Built-in"
+        }
         return String(displayID)
     }
 
@@ -61,9 +66,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil && renderer == nil {
-            setupRenderer()
-        } else if window == nil {
+        if window == nil {
             suspendRendering(reason: "view removed from window")
         }
     }
@@ -71,7 +74,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private func setupRenderer() {
         guard let metalLayer = self.metalLayer else { return }
         
-        let screen = window?.screen ?? NSScreen.main
+        let screen = self.window?.screen ?? NSScreen.main
         guard let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() else {
             AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] No Metal device is available for this screen.")
             return
@@ -260,7 +263,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private func suspendRendering(reason: StaticString) {
         animationActive = false
         animationTimeInterval = inactiveAnimationInterval
-        renderer = nil
         isRendering = false
         AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] Rendering suspended: \(reason, privacy: .public)")
     }
