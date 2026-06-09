@@ -16,8 +16,6 @@ extension NSScreen {
 
 @objc(Splatoon3ScreensaverView)
 public final class Splatoon3ScreensaverView: ScreenSaverView {
-    private static var idleExitWorkItem: DispatchWorkItem?
-
     private var metalLayer: CAMetalLayer?
     private var renderer: SplatoonRenderer?
     private var configController: ConfigSheetController?
@@ -48,6 +46,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         self.wantsLayer = true
     }
 
+    private var screenID: String {
+        guard let displayID = window?.screen?.displayID else { return "Unknown" }
+        return String(displayID)
+    }
+
     public override func makeBackingLayer() -> CALayer {
         let layer = CAMetalLayer()
         layer.pixelFormat = .bgra8Unorm
@@ -62,7 +65,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             setupRenderer()
         } else if window == nil {
             suspendRendering(reason: "view removed from window")
-            scheduleIdleExit()
         }
     }
 
@@ -71,7 +73,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         
         let screen = window?.screen ?? NSScreen.main
         guard let device = screen?.metalDevice ?? MTLCreateSystemDefaultDevice() else {
-            AppLog.renderer.error("No Metal device is available for this screen.")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] No Metal device is available for this screen.")
             return
         }
         metalLayer.device = device
@@ -87,16 +89,17 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         renderer = SplatoonRenderer(
             layer: metalLayer,
             device: device,
-            resourceBundle: Bundle(for: type(of: self))
+            resourceBundle: Bundle(for: type(of: self)),
+            screenID: screenID
         )
         
         if renderer == nil {
-            AppLog.renderer.error("Failed to initialize SplatoonRenderer.")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed to initialize SplatoonRenderer.")
             return
         }
         
         if renderer?.hasFatalError == true {
-            AppLog.renderer.error("Fatal error during renderer initialization (missing resources or pipeline compilation failure).")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Fatal error during renderer initialization (missing resources or pipeline compilation failure).")
             return
         }
         
@@ -127,12 +130,10 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func startAnimation() {
         super.startAnimation()
-        cancelIdleExit()
         animationActive = true
         if renderer == nil {
             setupRenderer()
         }
-        renderer?.reloadSettings(resetSimulation: false)
         let fps = ScreensaverSettings.load().fpsCap
         if fps > 0 {
             activeAnimationInterval = 1.0 / Double(fps)
@@ -142,12 +143,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             activeAnimationInterval = 1.0 / 240.0
         }
         self.animationTimeInterval = activeAnimationInterval
-        AppLog.renderer.info("Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
     }
 
     public override func stopAnimation() {
         suspendRendering(reason: "stopAnimation")
-        scheduleIdleExit()
         super.stopAnimation()
     }
 
@@ -172,34 +172,42 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         guard animationActive && isAnimating else { return false }
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        return !isPreview || isPreviewHostVisibleToUser
+        return isHostVisibleToUser
     }
 
     private func updateAnimationInterval(canRender: Bool) {
-        if canRender {
-            cancelIdleExit()
-        } else {
-            scheduleIdleExit()
-        }
-
         let targetInterval = canRender ? activeAnimationInterval : inactiveAnimationInterval
         if abs(animationTimeInterval - targetInterval) > .ulpOfOne {
             animationTimeInterval = targetInterval
+            
+            DispatchQueue.main.async {
+                if self.isAnimating {
+                    super.stopAnimation()
+                    super.startAnimation()
+                }
+            }
         }
     }
 
-    private var isPreviewHostVisibleToUser: Bool {
+    private var isHostVisibleToUser: Bool {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
-            return false
+            return true // Fallback to rendering if we can't determine
         }
 
         if frontmostApp.processIdentifier == ProcessInfo.processInfo.processIdentifier {
             return true
         }
 
-        return frontmostApp.bundleIdentifier == "com.apple.systempreferences"
-            || frontmostApp.localizedName == "System Settings"
-            || frontmostApp.localizedName == "系统设置"
+        let bundleID = frontmostApp.bundleIdentifier ?? ""
+        let name = frontmostApp.localizedName ?? ""
+
+        if bundleID == "com.apple.loginwindow" { return true }
+        if bundleID == "com.apple.windowserver" { return true }
+        if bundleID == "com.apple.systempreferences" { return true }
+        if bundleID.contains("ScreenSaver") { return true }
+        if name == "System Settings" || name == "系统设置" { return true }
+
+        return false
     }
 
     private func observeLifecycleNotifications() {
@@ -235,7 +243,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     @objc private func screensDidSleep() {
         suspendRendering(reason: "screens did sleep")
-        scheduleIdleExit()
     }
 
     @objc private func screenSaverDidStop() {
@@ -243,10 +250,9 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     @objc private func workspaceApplicationVisibilityChanged() {
-        guard isPreview else { return }
         let canRender = shouldRenderFrame
         updateAnimationInterval(canRender: canRender)
-        if canRender {
+        if canRender && !isRendering {
             renderFrame()
         }
     }
@@ -256,22 +262,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         animationTimeInterval = inactiveAnimationInterval
         renderer = nil
         isRendering = false
-        AppLog.renderer.info("Rendering suspended: \(reason)")
-    }
-
-    private func cancelIdleExit() {
-        Self.idleExitWorkItem?.cancel()
-        Self.idleExitWorkItem = nil
-    }
-
-    private func scheduleIdleExit() {
-        guard Self.idleExitWorkItem == nil else { return }
-        let workItem = DispatchWorkItem {
-            AppLog.renderer.info("Idle screen saver host exiting")
-            exit(0)
-        }
-        Self.idleExitWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 65.0, execute: workItem)
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] Rendering suspended: \(reason, privacy: .public)")
     }
 
     public override var hasConfigureSheet: Bool { true }

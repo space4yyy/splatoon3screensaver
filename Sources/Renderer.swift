@@ -40,24 +40,27 @@ final class SplatoonRenderer: NSObject {
     private var loggedInitialFrames = 0
     private var resolvedPaletteMode: Int = 0
     private(set) var hasFatalError = false
+    private let screenID: String
 
     init?(
         layer: CAMetalLayer,
         device: MTLDevice,
-        resourceBundle: Bundle
+        resourceBundle: Bundle,
+        screenID: String
     ) {
         guard let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
         self.metalLayer = layer
         self.resourceBundle = resourceBundle
+        self.screenID = screenID
         self.settings = ScreensaverSettings.load()
         super.init()
-        AppLog.renderer.debug("Renderer initialized, resourceBundle=\(resourceBundle.bundleURL.path, privacy: .public)")
+        AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Renderer initialized, resourceBundle=\(resourceBundle.bundleURL.path, privacy: .public)")
         buildResources()
         bubbleMask = makeBubbleMaskTexture()
         if bubbleMask == nil {
-            AppLog.renderer.error("Bubble mask texture was not loaded")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Bubble mask texture was not loaded")
             hasFatalError = true
         }
         reloadSettings(resetSimulation: true)
@@ -84,7 +87,7 @@ final class SplatoonRenderer: NSObject {
         }
         
         buildResources()
-        AppLog.renderer.debug("Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), cycleSeconds=\(self.settings.paletteCycleSeconds), resolvedPalette=\(self.resolvedPaletteMode)")
+        AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), cycleSeconds=\(self.settings.paletteCycleSeconds), resolvedPalette=\(self.resolvedPaletteMode)")
     }
 
     func handleResize(to size: CGSize) {
@@ -98,7 +101,7 @@ final class SplatoonRenderer: NSObject {
               let commandBuffer = queue.makeCommandBuffer()
         else {
             #if DEBUG
-            AppLog.renderer.debug("Draw skipped; layerExists=\(self.metalLayer != nil)")
+            AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Draw skipped; layerExists=\(self.metalLayer != nil)")
             #endif
             return
         }
@@ -121,10 +124,10 @@ final class SplatoonRenderer: NSObject {
             state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), 0)
         )
         #if DEBUG
-        AppLog.renderer.debug("Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
+        AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
         #endif
         if loggedInitialFrames < 3 {
-            AppLog.renderer.debug("Drawing frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
+            AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Drawing frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
             loggedInitialFrames += 1
         }
 
@@ -140,12 +143,12 @@ final class SplatoonRenderer: NSObject {
         encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
 
         guard let imagePipeline = pipelines["imagePass"] else {
-            AppLog.renderer.error("Missing image pipeline imagePass")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Missing image pipeline imagePass")
             hasFatalError = true
             return
         }
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            AppLog.renderer.error("Could not create drawable encoder")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Could not create drawable encoder")
             hasFatalError = true
             return
         }
@@ -173,7 +176,7 @@ final class SplatoonRenderer: NSObject {
             guard let url = resourceURL(name: "default", extension: "metallib"),
                   let lib = try? device.makeLibrary(URL: url)
             else {
-                AppLog.renderer.error("Failed to load default.metallib from \(self.resourceBundle.bundleURL.path, privacy: .public)")
+                AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed to load default.metallib from \(self.resourceBundle.bundleURL.path, privacy: .public)")
                 hasFatalError = true
                 return
             }
@@ -193,7 +196,7 @@ final class SplatoonRenderer: NSObject {
                 do {
                     pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
                 } catch {
-                    AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                    AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
                     hasFatalError = true
                 }
             }
@@ -208,7 +211,7 @@ final class SplatoonRenderer: NSObject {
             do {
                 pipelines["imagePass"] = try device.makeRenderPipelineState(descriptor: imageDescriptor)
             } catch {
-                AppLog.renderer.error("Failed image pipeline imagePass: \(String(describing: error), privacy: .public)")
+                AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed image pipeline imagePass: \(String(describing: error), privacy: .public)")
                 hasFatalError = true
             }
         }
@@ -265,12 +268,12 @@ final class SplatoonRenderer: NSObject {
         commandBuffer: MTLCommandBuffer
     ) {
         guard let target else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing target")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Offscreen pass \(pipelineName, privacy: .public) missing target")
             hasFatalError = true
             return
         }
         guard let pipeline = pipelines[pipelineName] else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing pipeline")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Offscreen pass \(pipelineName, privacy: .public) missing pipeline")
             hasFatalError = true
             return
         }
@@ -283,7 +286,7 @@ final class SplatoonRenderer: NSObject {
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
             hasFatalError = true
             return
         }
@@ -303,7 +306,7 @@ final class SplatoonRenderer: NSObject {
               let data = try? Data(contentsOf: url),
               data.count == 256 * 128
         else {
-            AppLog.renderer.error("Failed to load bubble-mask.raw from \(self.resourceBundle.bundleURL.path, privacy: .public)")
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed to load bubble-mask.raw from \(self.resourceBundle.bundleURL.path, privacy: .public)")
             return nil
         }
 
