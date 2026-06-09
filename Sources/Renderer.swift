@@ -156,6 +156,7 @@ final class SplatoonRenderer: NSObject {
         encoder.setRenderPipelineState(imagePipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
         encoder.setFragmentTexture(bufferCWrite, index: 0)
+        encoder.setFragmentTexture(bubbleMask, index: 1)
         encoder.setFragmentTexture(bufferDWrite, index: 2)
         encoder.setFragmentSamplerState(sampler, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -205,8 +206,9 @@ final class SplatoonRenderer: NSObject {
         // 2. Image passes (.bgra8Unorm format)
         if pipelines["imagePass"] == nil {
             let imageDescriptor = MTLRenderPipelineDescriptor()
-            imageDescriptor.vertexFunction = library.makeFunction(name: "fullscreenVertex")
-            imageDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            imageDescriptor.vertexFunction = library.makeFunction(name: "imageVertex")
+            guard let metalLayer = self.metalLayer else { return }
+            imageDescriptor.colorAttachments[0].pixelFormat = metalLayer.pixelFormat
             imageDescriptor.fragmentFunction = library.makeFunction(name: "imagePass")
             do {
                 pipelines["imagePass"] = try device.makeRenderPipelineState(descriptor: imageDescriptor)

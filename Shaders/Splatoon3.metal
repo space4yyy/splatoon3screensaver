@@ -26,6 +26,73 @@ vertex VertexOut fullscreenVertex(uint vid [[vertex_id]]) {
     return out;
 }
 
+struct ImageVertexOut {
+    float4 position [[position]];
+    float2 uv;
+    float4 coolRot;
+    float4 warmRot;
+    float coolScale;
+    float2 warmScale;
+    float time;
+};
+
+float2x2 rot(float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return float2x2(float2(c, -s), float2(s, c));
+}
+
+float coolWob(float p) {
+    return p < 0.3265 ? mix(0.0, 1.58748, smoothstep(0.0, 0.3265, p))
+                      : mix(1.58748, 0.0, smoothstep(0.3265, 1.0, p));
+}
+
+float warmWob(float p) {
+    if (p < 0.2695) { return mix(0.0, -9.0, smoothstep(0.0, 0.2695, p)); }
+    if (p < 0.6435) { return mix(-9.0, 12.0, smoothstep(0.2695, 0.6435, p)); }
+    return mix(12.0, 0.0, smoothstep(0.6435, 1.0, p));
+}
+
+float coolBreath(float fr) {
+    float lf = fmod(fr, 400.0);
+    float s = lf < 226.0 ? smoothstep(0.0, 226.0, lf) : 1.0 - smoothstep(226.0, 400.0, lf);
+    return mix(1.0, 2.30 / 2.24722, s);
+}
+
+float warmBreathX(float fr) {
+    float lf = fmod(fr, 500.0);
+    float s = lf < 118.0 ? smoothstep(0.0, 118.0, lf) : 1.0 - smoothstep(118.0, 500.0, lf);
+    return mix(1.0, 0.52037 / 0.5, s);
+}
+
+float warmBreathY(float fr) {
+    float lf = fmod(fr, 500.0);
+    float s = lf < 351.0 ? smoothstep(0.0, 351.0, lf) : 1.0 - smoothstep(351.0, 500.0, lf);
+    return mix(1.0, 0.52037 / 0.5, s);
+}
+
+vertex ImageVertexOut imageVertex(uint vid [[vertex_id]], constant Uniforms& u [[buffer(0)]]) {
+    float2 positions[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
+    ImageVertexOut out;
+    out.position = float4(positions[vid], 0.0, 1.0);
+    out.uv = positions[vid] * 0.5 + 0.5;
+
+    float loop = 2000.0 / 60.0;
+    float time = u.bufferResolution.w;
+    float lp = fract(time / loop);
+    float fr = lp * 2000.0;
+    float2 wsc = float2(warmBreathX(fr), warmBreathY(fr));
+
+    float2x2 cr = rot(coolWob(lp) * M_PI_F / 180.0);
+    float2x2 wr = rot(warmWob(lp) * M_PI_F / 180.0);
+    out.coolRot = float4(cr[0], cr[1]);
+    out.warmRot = float4(wr[0], wr[1]);
+    out.coolScale = 4.48 * coolBreath(fr);
+    out.warmScale = wsc * 3.5;
+    out.time = time;
+    return out;
+}
+
 
 
 float4 readTex(texture2d<float> tex, int2 p) {
@@ -206,67 +273,16 @@ fragment float4 passD(VertexOut in [[stage_in]],
     return float4(phase, target, prevDown, 1.0);
 }
 
-float2x2 rot(float a) {
-    float c = cos(a);
-    float s = sin(a);
-    return float2x2(float2(c, -s), float2(s, c));
+
+
+constexpr sampler bubbleSampler(address::repeat, filter::linear);
+float bubbleTex(texture2d<float> bubbleTexObj, float2 pp) {
+    return bubbleTexObj.sample(bubbleSampler, pp).x;
 }
 
-float coolWob(float p) {
-    return p < 0.3265 ? mix(0.0, 1.58748, smoothstep(0.0, 0.3265, p))
-                      : mix(1.58748, 0.0, smoothstep(0.3265, 1.0, p));
-}
-
-float warmWob(float p) {
-    if (p < 0.2695) { return mix(0.0, -9.0, smoothstep(0.0, 0.2695, p)); }
-    if (p < 0.6435) { return mix(-9.0, 12.0, smoothstep(0.2695, 0.6435, p)); }
-    return mix(12.0, 0.0, smoothstep(0.6435, 1.0, p));
-}
-
-float coolBreath(float fr) {
-    float lf = fmod(fr, 400.0);
-    float s = lf < 226.0 ? smoothstep(0.0, 226.0, lf) : 1.0 - smoothstep(226.0, 400.0, lf);
-    return mix(1.0, 2.30 / 2.24722, s);
-}
-
-float warmBreathX(float fr) {
-    float lf = fmod(fr, 500.0);
-    float s = lf < 118.0 ? smoothstep(0.0, 118.0, lf) : 1.0 - smoothstep(118.0, 500.0, lf);
-    return mix(1.0, 0.52037 / 0.5, s);
-}
-
-float warmBreathY(float fr) {
-    float lf = fmod(fr, 500.0);
-    float s = lf < 351.0 ? smoothstep(0.0, 351.0, lf) : 1.0 - smoothstep(351.0, 500.0, lf);
-    return mix(1.0, 0.52037 / 0.5, s);
-}
-
-float3 toSRGB(float3 c) {
-    c = clamp(c, 0.0, 1.0);
-    return mix(12.92 * c, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), c));
-}
-
-float bubbleTex(texture2d<float> dTex, float2 pp) {
-    float2 t = fract(pp) * float2(256.0, 128.0) - 0.5;
-    int2 i = int2(floor(t));
-    float2 f = fract(t);
-    float a = readTex(dTex, int2(i.x & 255, i.y & 127)).x;
-    float b = readTex(dTex, int2((i.x + 1) & 255, i.y & 127)).x;
-    float c = readTex(dTex, int2(i.x & 255, (i.y + 1) & 127)).x;
-    float d = readTex(dTex, int2((i.x + 1) & 255, (i.y + 1) & 127)).x;
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float dyeAt(texture2d<float> cTex, float2 uv, float2 res) {
-    float2 p = uv * SIM - 0.5;
-    float2 i = floor(p);
-    float2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(
-        mix(cellRead(cTex, i, res).w, cellRead(cTex, i + float2(1.0, 0.0), res).w, f.x),
-        mix(cellRead(cTex, i + float2(0.0, 1.0), res).w, cellRead(cTex, i + float2(1.0, 1.0), res).w, f.x),
-        f.y
-    );
+constexpr sampler dyeSampler(s_address::repeat, t_address::clamp_to_edge, filter::linear);
+float dyeAt(texture2d<float> cTex, float2 uv) {
+    return cTex.sample(dyeSampler, uv).w;
 }
 
 float3 paletteWarm(int idx, constant Uniforms& u) {
@@ -295,12 +311,12 @@ float3 paletteCool(int idx, constant Uniforms& u) {
     return float3(0.113725, 0.039216, 1.0);
 }
 
-fragment float4 imagePass(VertexOut in [[stage_in]],
+fragment float4 imagePass(ImageVertexOut in [[stage_in]],
                           constant Uniforms& u [[buffer(0)]],
                           texture2d<float> cTex [[texture(0)]],
+                          texture2d<float> bubbleTexObj [[texture(1)]],
                           texture2d<float> dTex [[texture(2)]]) {
     float2 R = u.resolution.xy;
-    float2 bufferR = u.bufferResolution.xy;
     float2 uv = in.uv;
     float phase = readTex(dTex, int2(256, 0)).x;
     int from = int(fmod(floor(phase), 3.0));
@@ -308,30 +324,30 @@ fragment float4 imagePass(VertexOut in [[stage_in]],
     float tt = smoothstep(0.0, 1.0, fract(phase));
 
     float2 br = 0.5 / SIM;
-    float dye = (dyeAt(cTex, uv, bufferR) * 2.0
-        + dyeAt(cTex, uv + float2(br.x, 0.0), bufferR)
-        + dyeAt(cTex, uv - float2(br.x, 0.0), bufferR)
-        + dyeAt(cTex, uv + float2(0.0, br.y), bufferR)
-        + dyeAt(cTex, uv - float2(0.0, br.y), bufferR)) / 6.0;
+    float dye = (dyeAt(cTex, uv) * 2.0
+        + dyeAt(cTex, uv + float2(br.x, 0.0))
+        + dyeAt(cTex, uv - float2(br.x, 0.0))
+        + dyeAt(cTex, uv + float2(0.0, br.y))
+        + dyeAt(cTex, uv - float2(0.0, br.y))) / 6.0;
     float a = clamp(dye * 248.659 - 48.757, 0.0, 1.0);
 
     float loop = 2000.0 / 60.0;
-    float time = u.bufferResolution.w;
-    float lp = fract(time / loop);
-    float fr = lp * 2000.0;
+    float time = in.time;
     float yf = 2.0 * R.y / R.x;
     float2 cen = float2(0.5, 0.5 * yf);
     float2 buv = float2(uv.x, uv.y * yf);
-    float2 wsc = float2(warmBreathX(fr), warmBreathY(fr));
-    float2 cb = (rot(coolWob(lp) * M_PI_F / 180.0) * (buv - cen) + cen) * 4.48 * coolBreath(fr);
-    float2 wb = (rot(warmWob(lp) * M_PI_F / 180.0) * ((buv - cen) * wsc) + cen) * 3.5;
+    
+    float2x2 coolRot = float2x2(in.coolRot.xy, in.coolRot.zw);
+    float2x2 warmRot = float2x2(in.warmRot.xy, in.warmRot.zw);
+    float2 cb = (coolRot * (buv - cen) + cen) * in.coolScale;
+    float2 wb = (warmRot * ((buv - cen) * in.warmScale) + cen);
     float scrl = 1.0 / loop;
-    float bb = bubbleTex(dTex, cb + float2(-scrl, -scrl) * time);
-    float bo = bubbleTex(dTex, wb + float2(scrl, -scrl) * time);
+    float bb = bubbleTex(bubbleTexObj, cb + float2(-scrl, -scrl) * time);
+    float bo = bubbleTex(bubbleTexObj, wb + float2(scrl, -scrl) * time);
 
     float3 warmTint[3] = { float3(0.113726, 0.0, 0.2), float3(0.003922, 0.027451, 0.0), float3(0.0, 0.019608, 0.086275) };
     float3 coolTint[3] = { float3(0.031373, -0.003922, -0.019608), float3(0.0, 0.05098, 0.003922), float3(0.121569, 0.0, -0.003922) };
     float3 warmC = mix(paletteWarm(from, u) + bo * warmTint[from], paletteWarm(to, u) + bo * warmTint[to], tt);
     float3 coolC = mix(paletteCool(from, u) + bb * coolTint[from], paletteCool(to, u) + bb * coolTint[to], tt);
-    return float4(toSRGB(mix(coolC, warmC, a)), 1.0);
+    return float4(mix(coolC, warmC, a), 1.0);
 }

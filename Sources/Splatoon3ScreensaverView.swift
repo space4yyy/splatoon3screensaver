@@ -64,8 +64,8 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func makeBackingLayer() -> CALayer {
         let layer = CAMetalLayer()
-        layer.pixelFormat = .bgra8Unorm
-        layer.framebufferOnly = false
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.framebufferOnly = true
         self.metalLayer = layer
         return layer
     }
