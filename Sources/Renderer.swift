@@ -169,8 +169,8 @@ final class SplatoonRenderer: NSObject {
         frame += 1
     }
 
-    private var bufferWidth: Int { Int(640.0 * CGFloat(settings.renderScale)) }
-    private var bufferHeight: Int { Int(360.0 * CGFloat(settings.renderScale)) }
+    private var bufferWidth: Int { 640 }
+    private var bufferHeight: Int { 360 }
 
     private func buildResources() {
         if library == nil {

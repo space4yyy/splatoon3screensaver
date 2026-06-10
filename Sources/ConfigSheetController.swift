@@ -75,7 +75,7 @@ final class ConfigSheetController: NSWindowController {
         
         // Add rows to grid
         grid.addRow(with: [createLabel(isChinese ? "帧率限制" : "FPS cap"), fpsPopup])
-        grid.addRow(with: [createLabel(isChinese ? "渲染缩放" : "Render scale"), scalePopup])
+        // grid.addRow(with: [createLabel(isChinese ? "渲染缩放" : "Render scale"), scalePopup]) // Hidden to protect fluid mechanics
         grid.addRow(with: [createLabel(isChinese ? "色彩方案" : "Colours"), palettePopup])
         grid.addRow(with: [createLabel(isChinese ? "循环间隔" : "Cycle interval"), cyclePopup])
         grid.addRow(with: [createLabel(isChinese ? "暖色墨水" : "Warm ink"), warmWell])
@@ -154,11 +154,11 @@ final class ConfigSheetController: NSWindowController {
         let isCycle = palettePopup.indexOfSelectedItem == 1 // Index 1 is "Cycle (All games)"
         
         // Hide/show palette-specific rows.
-        grid.row(at: 3).isHidden = !isCycle
+        grid.row(at: 2).isHidden = !isCycle
+        grid.row(at: 3).isHidden = !isCustom
         grid.row(at: 4).isHidden = !isCustom
-        grid.row(at: 5).isHidden = !isCustom
         
-        let targetContentHeight: CGFloat = 212 + (isCycle ? 34 : 0) + (isCustom ? 68 : 0)
+        let targetContentHeight: CGFloat = 178 + (isCycle ? 34 : 0) + (isCustom ? 68 : 0)
         let currentFrame = window.frame
         let targetFrame = window.frameRect(forContentRect: NSRect(x: currentFrame.origin.x, y: currentFrame.origin.y, width: currentFrame.size.width, height: targetContentHeight))
         
