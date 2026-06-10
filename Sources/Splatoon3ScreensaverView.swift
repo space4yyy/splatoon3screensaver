@@ -23,6 +23,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     private var animationActive = false
     private var activeAnimationInterval: TimeInterval = 1.0 / 60.0
     private let inactiveAnimationInterval: TimeInterval = 10.0
+    private var cachedIsHostVisible: Bool = true
 
     private static var instanceCounter = 0
     private lazy var instanceID: Int = {
@@ -140,6 +141,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override func startAnimation() {
         super.startAnimation()
         if animationActive { return }
+        updateHostVisibility()
         animationActive = true
         if renderer == nil {
             setupRenderer()
@@ -182,7 +184,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         guard animationActive && isAnimating else { return false }
         guard let window else { return false }
         guard window.isVisible && !bounds.isEmpty else { return false }
-        return isHostVisibleToUser
+        return cachedIsHostVisible
     }
 
     private func updateAnimationInterval(canRender: Bool) {
@@ -199,25 +201,27 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         }
     }
 
-    private var isHostVisibleToUser: Bool {
+    private func updateHostVisibility() {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
-            return true // Fallback to rendering if we can't determine
+            cachedIsHostVisible = true
+            return
         }
 
         if frontmostApp.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-            return true
+            cachedIsHostVisible = true
+            return
         }
 
         let bundleID = frontmostApp.bundleIdentifier ?? ""
         let name = frontmostApp.localizedName ?? ""
 
-        if bundleID == "com.apple.loginwindow" { return true }
-        if bundleID == "com.apple.windowserver" { return true }
-        if bundleID == "com.apple.systempreferences" { return true }
-        if bundleID.contains("ScreenSaver") { return true }
-        if name == "System Settings" || name == "系统设置" { return true }
+        if bundleID == "com.apple.loginwindow" { cachedIsHostVisible = true; return }
+        if bundleID == "com.apple.windowserver" { cachedIsHostVisible = true; return }
+        if bundleID == "com.apple.systempreferences" { cachedIsHostVisible = true; return }
+        if bundleID.contains("ScreenSaver") { cachedIsHostVisible = true; return }
+        if name == "System Settings" || name == "系统设置" { cachedIsHostVisible = true; return }
 
-        return false
+        cachedIsHostVisible = false
     }
 
     private func observeLifecycleNotifications() {
@@ -260,6 +264,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     @objc private func workspaceApplicationVisibilityChanged() {
+        updateHostVisibility()
         let canRender = shouldRenderFrame
         updateAnimationInterval(canRender: canRender)
         if canRender && !isRendering {
