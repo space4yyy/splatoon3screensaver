@@ -42,6 +42,8 @@ final class SplatoonRenderer: NSObject {
     private var frame: Int32 = 0
     private var loggedInitialFrames = 0
     private var resolvedPaletteMode: Int = 0
+    private var customWarmRGB = SIMD3<Float>(0, 0, 0)
+    private var customCoolRGB = SIMD3<Float>(0, 0, 0)
     private(set) var hasFatalError = false
     private let screenID: String
 
@@ -71,6 +73,9 @@ final class SplatoonRenderer: NSObject {
 
     func reloadSettings(resetSimulation: Bool) {
         settings = ScreensaverSettings.load()
+        customWarmRGB = settings.customWarm.float3
+        customCoolRGB = settings.customCool.float3
+
         if resetSimulation {
             frame = 0
             loggedInitialFrames = 0
@@ -129,8 +134,8 @@ final class SplatoonRenderer: NSObject {
             resolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, settings.renderScale),
             bufferResolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, time),
             mouse: SIMD4<Float>(0, 0, 0, 0),
-            customWarm: SIMD4(settings.customWarm.float3, delta),
-            customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
+            customWarm: SIMD4(customWarmRGB, delta),
+            customCool: SIMD4(customCoolRGB, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
             state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), Int32(shaderSeedIndex))
         )
         #if DEBUG

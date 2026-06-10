@@ -141,7 +141,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override func startAnimation() {
         super.startAnimation()
         if animationActive { return }
-        updateHostVisibility()
+        if isPreview {
+            updateHostVisibility()
+        } else {
+            cachedIsHostVisible = true
+        }
         animationActive = true
         if renderer == nil {
             setupRenderer()
@@ -171,6 +175,9 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         let canRender = shouldRenderFrame
         updateAnimationInterval(canRender: canRender)
         guard canRender else { return }
+        if renderer == nil {
+            setupRenderer()
+        }
         guard let renderer = self.renderer, !renderer.hasFatalError else { return }
         guard !isRendering else { return }
         isRendering = true
@@ -188,20 +195,28 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     private func updateAnimationInterval(canRender: Bool) {
+        if !canRender {
+            pauseRendering(reason: "host not visible")
+        }
+
         let targetInterval = canRender ? activeAnimationInterval : inactiveAnimationInterval
         if abs(animationTimeInterval - targetInterval) > .ulpOfOne {
             animationTimeInterval = targetInterval
-            
-            DispatchQueue.main.async {
-                if self.isAnimating {
-                    super.stopAnimation()
-                    super.startAnimation()
-                }
-            }
+            restartScreenSaverTimerIfNeeded()
         }
     }
 
+    private func restartScreenSaverTimerIfNeeded() {
+        guard self.animationActive && self.isAnimating else { return }
+        super.stopAnimation()
+        super.startAnimation()
+    }
+
     private func updateHostVisibility() {
+        guard isPreview else {
+            cachedIsHostVisible = true
+            return
+        }
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             cachedIsHostVisible = true
             return
@@ -264,6 +279,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     @objc private func workspaceApplicationVisibilityChanged() {
+        guard isPreview else { return }
         updateHostVisibility()
         let canRender = shouldRenderFrame
         updateAnimationInterval(canRender: canRender)
@@ -272,11 +288,22 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         }
     }
 
+    private func pauseRendering(reason: StaticString) {
+        guard renderer != nil || isRendering else { return }
+        renderer = nil
+        metalLayer?.device = nil
+        isRendering = false
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Rendering paused: \(reason, privacy: .public)")
+    }
+
     private func suspendRendering(reason: StaticString) {
-        if !animationActive && !isRendering { return }
+        let shouldLog = animationActive || isRendering || renderer != nil
         animationActive = false
         animationTimeInterval = inactiveAnimationInterval
+        renderer = nil
+        metalLayer?.device = nil
         isRendering = false
+        guard shouldLog else { return }
         AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Rendering suspended: \(reason, privacy: .public)")
     }
 
