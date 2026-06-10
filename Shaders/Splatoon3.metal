@@ -152,7 +152,9 @@ float fbm(float2 p) {
 
 fragment float4 passA(VertexOut in [[stage_in]],
                       constant Uniforms& u [[buffer(0)]],
-                      texture2d<float> cPrev [[texture(0)]]) {
+                      texture2d<float> cPrev [[texture(0)]],
+                      texture2d<float> seedTex [[texture(1)]],
+                      sampler s [[sampler(0)]]) {
     float2 res = u.resolution.xy;
     float2 uv = (floor(float2(in.uv.x, 1.0 - in.uv.y) * SIM) + 0.5) / SIM;
     float time = u.bufferResolution.w;
@@ -162,6 +164,12 @@ fragment float4 passA(VertexOut in [[stage_in]],
     float rate = 60.0 * (time < 0.6 ? 12.0 : 1.0);
 
     if (frame < 3) {
+        int seedIdx = u.state.w;
+        if (seedIdx < 6) {
+            float4 val = seedTex.sample(s, float2(in.uv.x, 1.0 - in.uv.y));
+            return float4(val.x, -val.y, val.z, val.w);
+        }
+        
         float2 r = float2(fract(dateW * 0.0173), fract(dateW * 0.0411)) * 53.0;
         float2 q = float2(uv.x * 1.7777, uv.y);
         float m = (uv.y - 0.5)

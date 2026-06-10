@@ -22,6 +22,7 @@ $(BUNDLE): FORCE
 	@mkdir -p "$(MACOS)" "$(RESOURCES)" "$(BUILD_DIR)/module-cache"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
 	cp Resources/bubble-mask.raw "$(RESOURCES)/bubble-mask.raw"
+	cp Resources/Shadertoy/seed_*.raw "$(RESOURCES)/"
 	xcrun -sdk macosx metal -std=macos-metal2.4 -mmacosx-version-min=$(MIN_MACOS) \
 		-fmodules-cache-path="$(BUILD_DIR)/module-cache" \
 		"$(METAL_SOURCE)" -o "$(RESOURCES)/default.metallib"

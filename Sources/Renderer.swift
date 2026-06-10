@@ -32,6 +32,9 @@ final class SplatoonRenderer: NSObject {
     private var bufferDRead: MTLTexture?
     private var bufferDWrite: MTLTexture?
     private var bubbleMask: MTLTexture?
+    private var seedTexture: MTLTexture?
+    private var lastSeedIndex: Int = -1
+    private var randomShaderSeed: Int = Int.random(in: 0...5)
 
     private var settings: ScreensaverSettings
     private var startTime = CACurrentMediaTime()
@@ -115,13 +118,20 @@ final class SplatoonRenderer: NSObject {
         let delta = min(Float(now - lastTime), 1.0 / 15.0)
         lastTime = now
 
+        let shaderSeedIndex = settings.seedIndex == 0 ? randomShaderSeed : settings.seedIndex - 1
+
+        if seedTexture == nil || shaderSeedIndex != lastSeedIndex {
+            seedTexture = makeSeedTexture(index: shaderSeedIndex)
+            lastSeedIndex = shaderSeedIndex
+        }
+
         var uniforms = ShaderUniforms(
             resolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, settings.renderScale),
             bufferResolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, time),
             mouse: SIMD4<Float>(0, 0, 0, 0),
             customWarm: SIMD4(settings.customWarm.float3, delta),
             customCool: SIMD4(settings.customCool.float3, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), 0)
+            state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), Int32(shaderSeedIndex))
         )
         #if DEBUG
         AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Draw frame=\(self.frame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), buffer=\(self.bufferWidth)x\(self.bufferHeight)")
@@ -295,7 +305,9 @@ final class SplatoonRenderer: NSObject {
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
         encoder.setFragmentTexture(input0, index: 0)
-        if pipelineName == "passD" {
+        if pipelineName == "passA" {
+            encoder.setFragmentTexture(seedTexture, index: 1)
+        } else if pipelineName == "passD" {
             encoder.setFragmentTexture(bubbleMask, index: 1)
         }
         encoder.setFragmentSamplerState(sampler, index: 0)
@@ -319,6 +331,27 @@ final class SplatoonRenderer: NSObject {
         data.withUnsafeBytes { raw in
             guard let baseAddress = raw.baseAddress else { return }
             texture.replace(region: MTLRegionMake2D(0, 0, 256, 128), mipmapLevel: 0, withBytes: baseAddress, bytesPerRow: 256)
+        }
+        return texture
+    }
+
+    private func makeSeedTexture(index: Int) -> MTLTexture? {
+        if index >= 6 { return nil } // 6 is procedural
+        guard let url = resourceURL(name: "seed_\(index)", extension: "raw"),
+              let data = try? Data(contentsOf: url),
+              data.count == 320 * 180 * 8
+        else {
+            AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Failed to load seed_\(index).raw")
+            return nil
+        }
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 320, height: 180, mipmapped: false)
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .managed
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        data.withUnsafeBytes { raw in
+            guard let baseAddress = raw.baseAddress else { return }
+            texture.replace(region: MTLRegionMake2D(0, 0, 320, 180), mipmapLevel: 0, withBytes: baseAddress, bytesPerRow: 320 * 8)
         }
         return texture
     }

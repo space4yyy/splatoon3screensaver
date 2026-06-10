@@ -5,8 +5,9 @@ final class ConfigSheetController: NSWindowController {
 
     private let fpsPopup = NSPopUpButton()
     private let scalePopup = NSPopUpButton()
-    private let palettePopup = NSPopUpButton()
-    private let cyclePopup = NSPopUpButton()
+    private let palettePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let cyclePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let seedPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let warmWell = NSColorWell()
     private let coolWell = NSColorWell()
     private let grid = NSGridView()
@@ -63,9 +64,13 @@ final class ConfigSheetController: NSWindowController {
             ? ["30 秒", "60 秒", "90 秒", "120 秒"]
             : ["30 s", "60 s", "90 s", "120 s"]
         )
+        seedPopup.addItems(withTitles: isChinese
+            ? ["随机初始状态 (1-6)", "初始状态 1", "初始状态 2", "初始状态 3", "初始状态 4", "初始状态 5", "初始状态 6", "程序化生成 (原版)"]
+            : ["Random Seed (1-6)", "Seed 1", "Seed 2", "Seed 3", "Seed 4", "Seed 5", "Seed 6", "Procedural (Original)"]
+        )
         
         // Constrain control widths
-        for control in [fpsPopup, scalePopup, palettePopup, cyclePopup, warmWell, coolWell] {
+        for control in [fpsPopup, scalePopup, palettePopup, cyclePopup, seedPopup, warmWell, coolWell] {
             control.translatesAutoresizingMaskIntoConstraints = false
             control.widthAnchor.constraint(equalToConstant: 160).isActive = true
         }
@@ -78,6 +83,7 @@ final class ConfigSheetController: NSWindowController {
         // grid.addRow(with: [createLabel(isChinese ? "渲染缩放" : "Render scale"), scalePopup]) // Hidden to protect fluid mechanics
         grid.addRow(with: [createLabel(isChinese ? "色彩方案" : "Colours"), palettePopup])
         grid.addRow(with: [createLabel(isChinese ? "循环间隔" : "Cycle interval"), cyclePopup])
+        grid.addRow(with: [createLabel(isChinese ? "初始状态" : "Start Seed"), seedPopup])
         grid.addRow(with: [createLabel(isChinese ? "暖色墨水" : "Warm ink"), warmWell])
         grid.addRow(with: [createLabel(isChinese ? "冷色墨水" : "Cool ink"), coolWell])
         
@@ -97,7 +103,7 @@ final class ConfigSheetController: NSWindowController {
         doneButton.keyEquivalent = "\r" // Enter key triggers Done
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         
-        [fpsPopup, scalePopup, palettePopup, cyclePopup, warmWell, coolWell].forEach {
+        [fpsPopup, scalePopup, palettePopup, cyclePopup, seedPopup, warmWell, coolWell].forEach {
             ($0 as NSControl).target = self
             ($0 as NSControl).action = #selector(changed)
         }
@@ -155,10 +161,10 @@ final class ConfigSheetController: NSWindowController {
         
         // Hide/show palette-specific rows.
         grid.row(at: 2).isHidden = !isCycle
-        grid.row(at: 3).isHidden = !isCustom
-        grid.row(at: 4).isHidden = !isCustom
+        grid.row(at: 4).isHidden = !isCustom // warmWell
+        grid.row(at: 5).isHidden = !isCustom // coolWell
         
-        let targetContentHeight: CGFloat = 178 + (isCycle ? 34 : 0) + (isCustom ? 68 : 0)
+        let targetContentHeight: CGFloat = 212 + (isCycle ? 34 : 0) + (isCustom ? 68 : 0)
         let currentFrame = window.frame
         let targetFrame = window.frameRect(forContentRect: NSRect(x: currentFrame.origin.x, y: currentFrame.origin.y, width: currentFrame.size.width, height: targetContentHeight))
         
@@ -177,6 +183,7 @@ final class ConfigSheetController: NSWindowController {
         scalePopup.selectItem(at: scales.enumerated().min(by: { abs($0.element - s.renderScale) < abs($1.element - s.renderScale) })?.offset ?? 2)
         palettePopup.selectItem(at: max(0, min(5, s.paletteMode)))
         cyclePopup.selectItem(at: [30, 60, 90, 120].firstIndex(of: s.paletteCycleSeconds) ?? 1)
+        seedPopup.selectItem(at: max(0, min(7, s.seedIndex)))
         warmWell.color = s.customWarm
         coolWell.color = s.customCool
         updateColorWellsVisibility(animate: false)
@@ -193,6 +200,7 @@ final class ConfigSheetController: NSWindowController {
         scalePopup.selectItem(at: 2)
         palettePopup.selectItem(at: 0)
         cyclePopup.selectItem(at: 1)
+        seedPopup.selectItem(at: 0)
         warmWell.color = NSColor(hex: "#BAFF0A")
         coolWell.color = NSColor(hex: "#1D0AFF")
         changed()
@@ -230,7 +238,8 @@ final class ConfigSheetController: NSWindowController {
             paletteMode: palettePopup.indexOfSelectedItem,
             paletteCycleSeconds: cycleValues[cyclePopup.indexOfSelectedItem],
             customWarm: warmWell.color,
-            customCool: coolWell.color
+            customCool: coolWell.color,
+            seedIndex: seedPopup.indexOfSelectedItem
         ).save()
     }
 }

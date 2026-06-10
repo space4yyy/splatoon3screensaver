@@ -10,6 +10,7 @@ struct ScreensaverSettings: Equatable {
     var paletteCycleSeconds: Int
     var customWarm: NSColor
     var customCool: NSColor
+    var seedIndex: Int
 
     static var registeredDefaults: [String: Any] {
         [
@@ -18,7 +19,8 @@ struct ScreensaverSettings: Equatable {
             "paletteMode": 0,
             "paletteCycleSeconds": 60,
             "customWarm": "#BAFF0A",
-            "customCool": "#1D0AFF"
+            "customCool": "#1D0AFF",
+            "seedIndex": 0
         ]
     }
 
@@ -39,7 +41,8 @@ struct ScreensaverSettings: Equatable {
                 paletteMode: registeredDefaults["paletteMode"] as? Int ?? 0,
                 paletteCycleSeconds: registeredDefaults["paletteCycleSeconds"] as? Int ?? 60,
                 customWarm: NSColor(hex: registeredDefaults["customWarm"] as? String ?? "#BAFF0A"),
-                customCool: NSColor(hex: registeredDefaults["customCool"] as? String ?? "#1D0AFF")
+                customCool: NSColor(hex: registeredDefaults["customCool"] as? String ?? "#1D0AFF"),
+                seedIndex: registeredDefaults["seedIndex"] as? Int ?? 0
             )
         }
         let storedCycleSeconds = d.integer(forKey: "paletteCycleSeconds")
@@ -49,7 +52,8 @@ struct ScreensaverSettings: Equatable {
             paletteMode: d.integer(forKey: "paletteMode"),
             paletteCycleSeconds: [30, 60, 90, 120].contains(storedCycleSeconds) ? storedCycleSeconds : 60,
             customWarm: NSColor(hex: d.string(forKey: "customWarm") ?? "#BAFF0A"),
-            customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF")
+            customCool: NSColor(hex: d.string(forKey: "customCool") ?? "#1D0AFF"),
+            seedIndex: d.object(forKey: "seedIndex") != nil ? d.integer(forKey: "seedIndex") : 0
         )
     }
 
@@ -61,6 +65,7 @@ struct ScreensaverSettings: Equatable {
         d.set(paletteCycleSeconds, forKey: "paletteCycleSeconds")
         d.set(customWarm.hexString, forKey: "customWarm")
         d.set(customCool.hexString, forKey: "customCool")
+        d.set(seedIndex, forKey: "seedIndex")
         d.synchronize()
     }
 
@@ -71,6 +76,7 @@ struct ScreensaverSettings: Equatable {
             && lhs.paletteCycleSeconds == rhs.paletteCycleSeconds
             && lhs.customWarm.hexString == rhs.customWarm.hexString
             && lhs.customCool.hexString == rhs.customCool.hexString
+            && lhs.seedIndex == rhs.seedIndex
     }
 }
 
