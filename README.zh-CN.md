@@ -32,14 +32,15 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
 ## 系统要求
 
 - macOS 13 Ventura 或更新版本。
-- GitHub Actions 预构建产物面向支持 Metal 的 Apple silicon Mac。
-- 支持 Metal 的 Intel Mac 可以从源码本地构建；默认 Makefile 会按运行
-  `make` 的 Mac 架构构建。
+- 支持 Metal 的 Mac。
+- Release 产物由 GitHub Actions 构建。如果某个 release build 无法在你的
+  Mac 型号或架构上加载，可以从源码本地构建；默认 Makefile 会按运行 `make`
+  的 Mac 架构构建。
 
 ## 开始使用
 
-1. **下载并解压**：从 GitHub Actions artifacts 下载最新构建产物，解压后获得
-   `splatoon3-boot.saver`。
+1. **下载并解压**：从 [latest GitHub Release](https://github.com/space4yyy/splatoon3screensaver/releases/latest)
+   下载 `splatoon3-boot.saver.zip`，解压后获得 `splatoon3-boot.saver`。
 2. **安装**：双击 `splatoon3-boot.saver` 安装。macOS 会提示选择：
    - **仅为当前用户安装**：安装到 `~/Library/Screen Savers/`
    - **为所有用户安装**：安装到 `/Library/Screen Savers/`，需要管理员密码
@@ -113,7 +114,7 @@ make install
 make clean
 ```
 
-推送 tag 后，GitHub Actions 会构建并上传 `.saver` workflow artifact：
+推送 tag 后，GitHub Actions 会构建并上传 `splatoon3-boot.saver.zip` 到 GitHub Releases：
 
 ```sh
 git tag v1.0.0

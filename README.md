@@ -35,13 +35,14 @@ Main features:
 ## System Requirements
 
 - macOS 13 Ventura or newer.
-- Apple silicon Mac with Metal support for the prebuilt GitHub Actions artifact.
-- Intel Macs with Metal support can build locally from source; the default
+- A Mac with Metal support.
+- Release assets are built by GitHub Actions. If a release build does not load
+  on your Mac model or architecture, build locally from source; the default
   Makefile builds for the architecture of the Mac running `make`.
 
 ## Getting Started
 
-1. **Download & Extract**: Download the latest build from the GitHub Actions artifacts, and extract it to obtain `splatoon3-boot.saver`.
+1. **Download & Extract**: Download `splatoon3-boot.saver.zip` from the [latest GitHub Release](https://github.com/space4yyy/splatoon3screensaver/releases/latest), then unzip it to obtain `splatoon3-boot.saver`.
 2. **Install**: Double-click `splatoon3-boot.saver` to install it. macOS will prompt you to choose:
    - **Install for this user only** (Installs to `~/Library/Screen Savers/`)
    - **Install for all users** (Installs to `/Library/Screen Savers/`, requires administrator password)
@@ -114,7 +115,7 @@ Clean build artifacts:
 make clean
 ```
 
-Tag pushes build and upload the `.saver` workflow artifact through GitHub Actions:
+Tag pushes build and upload `splatoon3-boot.saver.zip` to GitHub Releases:
 
 ```sh
 git tag v1.0.0

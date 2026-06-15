@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build .saver artifact
@@ -20,9 +23,24 @@ jobs:
       - name: Build screensaver
         run: make package
 
+      - name: Package release zip
+        run: ditto -c -k --keepParent --norsrc --noextattr dist/splatoon3-boot.saver dist/splatoon3-boot.saver.zip
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: splatoon3-boot.saver
-          path: dist/splatoon3-boot.saver
+          name: splatoon3-boot.saver.zip
+          path: dist/splatoon3-boot.saver.zip
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/splatoon3-boot.saver.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/splatoon3-boot.saver.zip \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Download splatoon3-boot.saver.zip, unzip it, then double-click splatoon3-boot.saver to install."
+          fi
