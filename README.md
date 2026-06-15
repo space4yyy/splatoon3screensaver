@@ -24,7 +24,6 @@ Main features:
 
 - Native Metal renderer.
 - Configurable FPS cap: 30, 60, 120, or display sync.
-- Configurable internal render scale: 0.5x to 1.5x.
 - Palette modes: random on launch, timed cycle, Splatoon 1, Splatoon 2,
   Splatoon 3, or custom warm/cool colors.
 - Configurable timed cycle interval: 30, 60, 90, or 120 seconds, defaulting
@@ -48,7 +47,7 @@ Main features:
      sudo xattr -cr /Library/Screen\ Savers/splatoon3-boot.saver
      ```
 
-4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize colors, frame rate, and render scale.
+4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize colors, frame rate, palette cycling, and the initial simulation state.
 
 ## Log Feedback
 

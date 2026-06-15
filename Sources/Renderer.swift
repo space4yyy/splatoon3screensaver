@@ -40,6 +40,7 @@ private final class SplatoonSimulation {
     private var startTime = CACurrentMediaTime()
     private var lastTime = CACurrentMediaTime()
     private var lastUpdateTime = 0.0
+    private var lastSettingsCheckTime = 0.0
     private var frame: Int32 = 0
     private var resolvedPaletteMode: Int = 0
     private var customWarmRGB = SIMD3<Float>(0, 0, 0)
@@ -85,6 +86,7 @@ private final class SplatoonSimulation {
             startTime = CACurrentMediaTime()
             lastTime = startTime
             lastUpdateTime = 0
+            lastSettingsCheckTime = 0
             recreateTextures()
         }
         
@@ -111,9 +113,12 @@ private final class SplatoonSimulation {
         defer { lock.unlock() }
 
         if hasFatalError { return }
-        let latestSettings = ScreensaverSettings.load()
-        if latestSettings != settings {
-            reloadSettingsLocked(resetSimulation: true)
+        if now - lastSettingsCheckTime >= 1.0 {
+            lastSettingsCheckTime = now
+            let latestSettings = ScreensaverSettings.load()
+            if latestSettings != settings {
+                reloadSettingsLocked(resetSimulation: true)
+            }
         }
 
         let updateInterval = settings.fpsCap > 0 ? 1.0 / Double(settings.fpsCap) : 1.0 / 120.0
@@ -435,6 +440,8 @@ private final class SplatoonSimulationPool {
 final class SplatoonRenderer: NSObject {
     private let simulation: SplatoonSimulation
     private weak var metalLayer: CAMetalLayer?
+    private var imagePipeline: MTLRenderPipelineState?
+    private var imagePipelinePixelFormat: MTLPixelFormat?
     private var loggedInitialFrames = 0
     private(set) var hasFatalError = false
     private let screenID: String
@@ -502,14 +509,16 @@ final class SplatoonRenderer: NSObject {
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         descriptor.colorAttachments[0].storeAction = .store
 
-        guard let imagePipeline = simulation.imagePipeline(pixelFormat: metalLayer.pixelFormat, screenID: screenID) else {
+        guard let imagePipeline = cachedImagePipeline(for: metalLayer.pixelFormat) else {
             AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Missing image pipeline imagePass")
             hasFatalError = true
+            commandBuffer.commit()
             return
         }
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             AppLog.renderer.error("[Screen \(self.screenID, privacy: .public)] Could not create drawable encoder")
             hasFatalError = true
+            commandBuffer.commit()
             return
         }
         encoder.setRenderPipelineState(imagePipeline)
@@ -524,5 +533,18 @@ final class SplatoonRenderer: NSObject {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    private func cachedImagePipeline(for pixelFormat: MTLPixelFormat) -> MTLRenderPipelineState? {
+        if imagePipelinePixelFormat == pixelFormat, let imagePipeline {
+            return imagePipeline
+        }
+
+        guard let pipeline = simulation.imagePipeline(pixelFormat: pixelFormat, screenID: screenID) else {
+            return nil
+        }
+        imagePipeline = pipeline
+        imagePipelinePixelFormat = pixelFormat
+        return pipeline
     }
 }

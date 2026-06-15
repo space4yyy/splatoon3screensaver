@@ -316,7 +316,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     private func pauseRendering(reason: StaticString) {
         guard renderer != nil || isRendering || isAnimating else { return }
-        animationActive = false
         renderer = nil
         metalLayer?.isHidden = true
         metalLayer?.device = nil
@@ -325,7 +324,6 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             super.stopAnimation()
         }
         AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Rendering paused: \(reason, privacy: .public)")
-        requestHostTermination(reason: reason)
     }
 
     private func suspendRendering(reason: StaticString) {
