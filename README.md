@@ -1,5 +1,7 @@
 # Splatoon 3 Boot Screensaver
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 A native macOS `.saver` recreation of Nick27's Shadertoy `f3SGWc`, inspired by
 the Splatoon 3 boot animation.
 
@@ -29,6 +31,13 @@ Main features:
 - Configurable timed cycle interval: 30, 60, 90, or 120 seconds, defaulting
   to 60 seconds.
 - No sound.
+
+## System Requirements
+
+- macOS 13 Ventura or newer.
+- Apple silicon Mac with Metal support for the prebuilt GitHub Actions artifact.
+- Intel Macs with Metal support can build locally from source; the default
+  Makefile builds for the architecture of the Mac running `make`.
 
 ## Getting Started
 
