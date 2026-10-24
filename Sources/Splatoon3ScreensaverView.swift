@@ -30,16 +30,27 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         return Self.instanceCounter
     }()
 
+    // When the options sheet closes, System Settings replaces its preview: the
+    // host sends startAnimation to the outgoing view, removes that view without
+    // stopAnimation, and never starts the replacement, which stays black. An
+    // animating view removed this way hands its animation to the replacement.
+    private static let liveViews = NSHashTable<Splatoon3ScreensaverView>.weakObjects()
+    private static var abandonedAnimationTime: CFTimeInterval?
+    private static let handoffDelay: TimeInterval = 0.3
+    private static let handoffWindow: CFTimeInterval = 3.0
+
     public override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
         setupLayer()
         observeLifecycleNotifications()
+        Self.liveViews.add(self)
     }
 
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupLayer()
         observeLifecycleNotifications()
+        Self.liveViews.add(self)
     }
 
     deinit {
@@ -73,7 +84,34 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
+            if animationActive {
+                Self.abandonedAnimationTime = CACurrentMediaTime()
+                Self.scheduleAnimationHandoff()
+            }
             suspendRendering(reason: "view removed from window")
+            // A detached view's timer keeps waking the host about 60 times a
+            // second without drawing anything.
+            if isAnimating {
+                super.stopAnimation()
+            }
+        } else if let abandoned = Self.abandonedAnimationTime,
+                  CACurrentMediaTime() - abandoned < Self.handoffWindow {
+            Self.scheduleAnimationHandoff()
+        }
+    }
+
+    /// Starts views in a window that the host left stopped shortly after an
+    /// animating view was removed. The delay lets the host start them itself.
+    private static func scheduleAnimationHandoff() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + handoffDelay) {
+            guard let abandoned = abandonedAnimationTime,
+                  CACurrentMediaTime() - abandoned < handoffWindow
+            else { return }
+            for view in liveViews.allObjects where view.window != nil && !view.animationActive && !view.bounds.isEmpty {
+                abandonedAnimationTime = nil
+                AppLog.renderer.info("[Screen \(view.screenID, privacy: .public)] [View \(view.instanceID, privacy: .public)] Starting replacement view the host left stopped")
+                view.startAnimation()
+            }
         }
     }
 
@@ -158,19 +196,28 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             pauseRendering(reason: "host not visible")
             return
         }
+        refreshFrameInterval()
         if renderer == nil {
             setupRenderer()
         }
-        let fps = ScreensaverSettings.load().fpsCap
-        if fps > 0 {
-            activeAnimationInterval = 1.0 / Double(fps)
-        } else {
-            // Display sync mode: request up to 240fps on the timer, allowing CAMetalLayer
-            // nextDrawable() to block and sync cleanly to the monitor's physical VSync.
-            activeAnimationInterval = 1.0 / 240.0
-        }
         self.animationTimeInterval = activeAnimationInterval
         AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Animation started, isPreview=\(self.isPreview), interval=\(self.animationTimeInterval)")
+    }
+
+    /// Applies the frame rate cap, never faster than the display refreshes, and
+    /// the battery saver cap. The next frame restarts the timer if it changed.
+    private func refreshFrameInterval() {
+        let settings = ScreensaverSettings.load()
+        let displayFPS = max((window?.screen ?? NSScreen.main)?.maximumFramesPerSecond ?? 60, 1)
+        var fps = settings.fpsCap > 0 ? min(settings.fpsCap, displayFPS) : displayFPS
+        if settings.batterySaver && PowerMonitor.shared.prefersReducedPower {
+            fps = min(fps, ScreensaverSettings.batterySaverFPS)
+        }
+        let interval = 1.0 / Double(fps)
+        if abs(interval - activeAnimationInterval) > .ulpOfOne {
+            AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Frame rate set to \(fps) fps, batterySaver=\(settings.batterySaver), reducedPower=\(PowerMonitor.shared.prefersReducedPower)")
+        }
+        activeAnimationInterval = interval
     }
 
     public override func stopAnimation() {
@@ -281,6 +328,13 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(powerStateDidChange),
+            name: PowerMonitor.didChangeNotification,
+            object: nil
+        )
+
         let distributedCenter = DistributedNotificationCenter.default()
         for name in [
             "com.apple.screensaver.willstop",
@@ -303,6 +357,11 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     @objc private func screenSaverDidStop() {
         stopAnimation()
+    }
+
+    @objc private func powerStateDidChange() {
+        guard animationActive else { return }
+        refreshFrameInterval()
     }
 
     @objc private func workspaceApplicationVisibilityChanged() {
@@ -354,7 +413,8 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
         }
         configController?.load()
         configController?.onChange = { [weak self] in
-            self?.renderer?.reloadSettings(resetSimulation: true)
+            self?.renderer?.reloadSettings()
+            self?.refreshFrameInterval()
         }
         return configController?.window
     }

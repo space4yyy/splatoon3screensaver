@@ -3,34 +3,106 @@ import Metal
 import OSLog
 import QuartzCore
 
-private struct ShaderUniforms {
-    var resolution: SIMD4<Float>
-    var bufferResolution: SIMD4<Float>
-    var mouse: SIMD4<Float>
-    var customWarm: SIMD4<Float>
-    var customCool: SIMD4<Float>
-    var state: SIMD4<Int32>
+private struct SimUniforms {
+    var frame: Int32
+    var seedIndex: Int32
+    var dateSeconds: Float
+    var padding: Float = 0
+}
+
+private struct ImageUniforms {
+    var coolTransform: SIMD4<Float>
+    var warmTransform: SIMD4<Float>
+    var bubbleOffset: SIMD4<Float>
+    var warmBase: SIMD4<Float>
+    var warmTint: SIMD4<Float>
+    var coolBase: SIMD4<Float>
+    var coolTint: SIMD4<Float>
 }
 
 enum AppLog {
     static let renderer = Logger(subsystem: ScreensaverSettings.moduleName, category: "renderer")
 }
 
+/// Ink colours from the original shader, in linear light. Indexed by palette
+/// phase: 0 = Splatoon 3, 1 = Splatoon 1, 2 = Splatoon 2.
+enum InkPalette {
+    static let warm: [SIMD3<Float>] = [
+        SIMD3(0.729412, 1.0, 0.039216),
+        SIMD3(0.945098, 0.098039, 0.0),
+        SIMD3(0.980392, 0.054902, 0.470588),
+    ]
+    static let cool: [SIMD3<Float>] = [
+        SIMD3(0.113725, 0.039216, 1.0),
+        SIMD3(0.0, 0.027451, 0.956863),
+        SIMD3(0.039216, 0.921569, 0.031373),
+    ]
+    fileprivate static let warmTint: [SIMD3<Float>] = [
+        SIMD3(0.113726, 0.0, 0.2),
+        SIMD3(0.003922, 0.027451, 0.0),
+        SIMD3(0.0, 0.019608, 0.086275),
+    ]
+    fileprivate static let coolTint: [SIMD3<Float>] = [
+        SIMD3(0.031373, -0.003922, -0.019608),
+        SIMD3(0.0, 0.05098, 0.003922),
+        SIMD3(0.121569, 0.0, -0.003922),
+    ]
+
+    static func phase(for mode: PaletteMode) -> Int {
+        switch mode {
+        case .splatoon1: return 1
+        case .splatoon2: return 2
+        default: return 0
+        }
+    }
+}
+
+/// The palette colours for one frame. This replaces the original Buffer D,
+/// whose phase is a pure function of time and palette mode.
+private struct PaletteBlend {
+    var warmBase: SIMD3<Float>
+    var warmTint: SIMD3<Float>
+    var coolBase: SIMD3<Float>
+    var coolTint: SIMD3<Float>
+}
+
+private func mix(_ a: Double, _ b: Double, _ t: Double) -> Double {
+    a + (b - a) * t
+}
+
+private func mix(_ a: SIMD3<Float>, _ b: SIMD3<Float>, _ t: Float) -> SIMD3<Float> {
+    a + (b - a) * t
+}
+
+private func smoothstep(_ edge0: Double, _ edge1: Double, _ x: Double) -> Double {
+    let t = min(max((x - edge0) / (edge1 - edge0), 0), 1)
+    return t * t * (3 - 2 * t)
+}
+
+private func fract(_ x: Double) -> Double {
+    x - x.rounded(.down)
+}
+
 private final class SplatoonSimulation {
+    static let bufferWidth = 640
+    static let bufferHeight = 360
+    /// The original shader advances its fluid 60 times per second.
+    private static let stepInterval = 1.0 / 60.0
+    private static let maxStepsPerFrame = 4
+
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private let resourceBundle: Bundle
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
     private var imagePipelines: [UInt: MTLRenderPipelineState] = [:]
+    private var passDescriptors: [String: MTLRenderPassDescriptor] = [:]
     private var sampler: MTLSamplerState?
     private var library: MTLLibrary?
     private var bufferA: MTLTexture?
     private var bufferB: MTLTexture?
-    private var bufferCRead: MTLTexture?
-    private var bufferCWrite: MTLTexture?
-    private var bufferDRead: MTLTexture?
-    private var bufferDWrite: MTLTexture?
+    private var bufferC: MTLTexture?
+    private var dyeTexture: MTLTexture?
     private var bubbleMask: MTLTexture?
     private var seedTexture: MTLTexture?
     private var lastSeedIndex: Int = -1
@@ -38,11 +110,11 @@ private final class SplatoonSimulation {
 
     private var settings: ScreensaverSettings
     private var startTime = CACurrentMediaTime()
-    private var lastTime = CACurrentMediaTime()
-    private var lastUpdateTime = 0.0
+    private var lastAdvanceTime: CFTimeInterval?
+    private var stepBacklog = 0.0
     private var lastSettingsCheckTime = 0.0
     private var frame: Int32 = 0
-    private var resolvedPaletteMode: Int = 0
+    private var resolvedPaletteMode: PaletteMode = .splatoon3
     private var customWarmRGB = SIMD3<Float>(0, 0, 0)
     private var customCoolRGB = SIMD3<Float>(0, 0, 0)
     private(set) var hasFatalError = false
@@ -67,48 +139,57 @@ private final class SplatoonSimulation {
             AppLog.renderer.error("[Screen \(screenID, privacy: .public)] Bubble mask texture was not loaded")
             hasFatalError = true
         }
-        reloadSettings(resetSimulation: true)
+        makeTextures()
+        applySettingsLocked(settings, forceReset: true)
     }
 
-    func reloadSettings(resetSimulation: Bool) {
+    /// Re-reads settings. Only a new starting pattern restarts the fluid;
+    /// colour and frame rate changes apply to the running animation.
+    func reloadSettings(forceReset: Bool = false) {
         lock.lock()
         defer { lock.unlock() }
-        reloadSettingsLocked(resetSimulation: resetSimulation)
+        applySettingsLocked(ScreensaverSettings.load(), forceReset: forceReset)
     }
 
-    private func reloadSettingsLocked(resetSimulation: Bool) {
-        settings = ScreensaverSettings.load()
-        customWarmRGB = settings.customWarm.float3
-        customCoolRGB = settings.customCool.float3
+    private func applySettingsLocked(_ latest: ScreensaverSettings, forceReset: Bool) {
+        let previous = settings
+        settings = latest
+        customWarmRGB = latest.customWarm.linearRGB
+        customCoolRGB = latest.customCool.linearRGB
 
-        if resetSimulation {
+        let reset = forceReset || latest.seedIndex != previous.seedIndex
+        if reset {
             frame = 0
             startTime = CACurrentMediaTime()
-            lastTime = startTime
-            lastUpdateTime = 0
+            lastAdvanceTime = nil
+            stepBacklog = 0
             lastSettingsCheckTime = 0
-            recreateTextures()
+            randomShaderSeed = Int.random(in: 0...5)
         }
-        
-        if settings.paletteMode == 0 {
-            // Pick a random game (2 = Splatoon 1, 3 = Splatoon 2, 4 = Splatoon 3)
-            // if we are resetting the simulation or if the palette mode was not yet resolved to a valid game
-            if resetSimulation || resolvedPaletteMode < 2 || resolvedPaletteMode > 4 {
-                resolvedPaletteMode = Int.random(in: 2...4)
+
+        if latest.paletteMode == .random {
+            let games: [PaletteMode] = [.splatoon1, .splatoon2, .splatoon3]
+            if reset || !games.contains(resolvedPaletteMode) {
+                resolvedPaletteMode = games.randomElement() ?? .splatoon3
+            } else if previous.paletteMode != .random {
+                // Picking Random in the options sheet should visibly change the inks.
+                resolvedPaletteMode = games.filter { $0 != resolvedPaletteMode }.randomElement() ?? .splatoon3
             }
         } else {
-            resolvedPaletteMode = settings.paletteMode
+            resolvedPaletteMode = latest.paletteMode
         }
-        
-        buildResources()
-        AppLog.renderer.debug("Shared simulation settings reloaded, reset=\(resetSimulation), fps=\(self.settings.fpsCap), scale=\(self.settings.renderScale), palette=\(self.settings.paletteMode), cycleSeconds=\(self.settings.paletteCycleSeconds), resolvedPalette=\(self.resolvedPaletteMode)")
+
+        AppLog.renderer.debug("Shared simulation settings applied, reset=\(reset), fps=\(latest.fpsCap), batterySaver=\(latest.batterySaver), palette=\(latest.paletteMode.rawValue), cycleSeconds=\(latest.paletteCycleSeconds), resolvedPalette=\(self.resolvedPaletteMode.rawValue), seed=\(latest.seedIndex)")
     }
 
     func makeCommandBuffer() -> MTLCommandBuffer? {
         queue.makeCommandBuffer()
     }
 
-    func advanceIfNeeded(commandBuffer: MTLCommandBuffer, now: CFTimeInterval) {
+    /// Encodes the simulation steps that are due. Steps run on a fixed 60 Hz
+    /// clock, so lower frame rates encode two steps per frame instead of slowing
+    /// the ink down, and frames between steps (120 fps) encode nothing.
+    func advance(commandBuffer: MTLCommandBuffer, now: CFTimeInterval) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -117,52 +198,73 @@ private final class SplatoonSimulation {
             lastSettingsCheckTime = now
             let latestSettings = ScreensaverSettings.load()
             if latestSettings != settings {
-                reloadSettingsLocked(resetSimulation: true)
+                applySettingsLocked(latestSettings, forceReset: false)
             }
         }
 
-        let updateInterval = settings.fpsCap > 0 ? 1.0 / Double(settings.fpsCap) : 1.0 / 120.0
-        if frame > 0 && now - lastUpdateTime < updateInterval * 0.85 {
-            return
+        if let lastAdvanceTime {
+            stepBacklog += min(max(now - lastAdvanceTime, 0), 0.25)
+        } else {
+            stepBacklog = Self.stepInterval
         }
+        lastAdvanceTime = now
 
-        let time = Float(now - startTime)
-        let delta = min(Float(now - lastTime), 1.0 / 15.0)
-        lastTime = now
-        lastUpdateTime = now
+        // A quarter step of slack keeps timer jitter from alternating between
+        // zero and two steps when the frame rate matches the step rate.
+        let dueSteps = Int((stepBacklog / Self.stepInterval + 0.25).rounded(.down))
+        let steps = min(dueSteps, Self.maxStepsPerFrame)
+        guard steps > 0 else { return }
+        stepBacklog = steps == dueSteps ? stepBacklog - Double(steps) * Self.stepInterval : 0
 
         let shaderSeedIndex = settings.seedIndex == 0 ? randomShaderSeed : settings.seedIndex - 1
-
         if seedTexture == nil || shaderSeedIndex != lastSeedIndex {
             seedTexture = makeSeedTexture(index: shaderSeedIndex)
             lastSeedIndex = shaderSeedIndex
         }
 
-        var uniforms = ShaderUniforms(
-            resolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, settings.renderScale),
-            bufferResolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, time),
-            mouse: SIMD4<Float>(0, 0, 0, 0),
-            customWarm: SIMD4(customWarmRGB, delta),
-            customCool: SIMD4(customCoolRGB, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), Int32(shaderSeedIndex))
-        )
-
-        encodeOffscreen("passA", target: bufferA, input0: bufferCRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-        encodeOffscreen("passB", target: bufferB, input0: bufferA, uniforms: &uniforms, commandBuffer: commandBuffer)
-        encodeOffscreen("passC", target: bufferCWrite, input0: bufferB, uniforms: &uniforms, commandBuffer: commandBuffer)
-        encodeOffscreen("passD", target: bufferDWrite, input0: bufferDRead, uniforms: &uniforms, commandBuffer: commandBuffer)
-        swap(&bufferCRead, &bufferCWrite)
-        swap(&bufferDRead, &bufferDWrite)
-        frame += 1
+        let dateSeconds = Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))
+        for _ in 0..<steps {
+            var uniforms = SimUniforms(frame: frame, seedIndex: Int32(shaderSeedIndex), dateSeconds: dateSeconds)
+            encodeStep("passA", inputs: [bufferC, seedTexture], uniforms: &uniforms, commandBuffer: commandBuffer)
+            encodeStep("passB", inputs: [bufferA], uniforms: &uniforms, commandBuffer: commandBuffer)
+            encodeStep("passC", inputs: [bufferB], uniforms: &uniforms, commandBuffer: commandBuffer)
+            if frame < Int32.max { frame += 1 }
+        }
     }
 
-    func presentationState(drawableSize: CGSize, now: CFTimeInterval) -> (uniforms: ShaderUniforms, cTexture: MTLTexture?, dTexture: MTLTexture?, bubbleTexture: MTLTexture?, sampler: MTLSamplerState?) {
+    func presentationState(now: CFTimeInterval) -> (time: Double, palette: PaletteBlend, dyeTexture: MTLTexture?, bubbleTexture: MTLTexture?) {
         lock.lock()
         defer { lock.unlock() }
 
-        var uniforms = makeUniforms(time: Float(now - startTime), delta: 0)
-        uniforms.resolution = SIMD4(Float(drawableSize.width), Float(drawableSize.height), 1.0, settings.renderScale)
-        return (uniforms, bufferCRead, bufferDRead, bubbleMask, sampler)
+        let time = now - startTime
+        return (time, paletteBlendLocked(time: time), dyeTexture, bubbleMask)
+    }
+
+    private func paletteBlendLocked(time: Double) -> PaletteBlend {
+        let phase: Double
+        if resolvedPaletteMode == .cycle {
+            let period = max(1.0, Double(settings.paletteCycleSeconds))
+            let transition = 4.0
+            let cycleIndex = (time / period).rounded(.down)
+            let remainder = time.truncatingRemainder(dividingBy: period)
+            phase = remainder < period - transition
+                ? cycleIndex
+                : cycleIndex + (remainder - (period - transition)) / transition
+        } else {
+            phase = Double(InkPalette.phase(for: resolvedPaletteMode))
+        }
+
+        let base = phase.rounded(.down)
+        let from = Int(base.truncatingRemainder(dividingBy: 3))
+        let to = Int((base + 1).truncatingRemainder(dividingBy: 3))
+        let t = Float(smoothstep(0, 1, phase - base))
+        let isCustom = resolvedPaletteMode == .custom
+        return PaletteBlend(
+            warmBase: isCustom ? customWarmRGB : mix(InkPalette.warm[from], InkPalette.warm[to], t),
+            warmTint: mix(InkPalette.warmTint[from], InkPalette.warmTint[to], t),
+            coolBase: isCustom ? customCoolRGB : mix(InkPalette.cool[from], InkPalette.cool[to], t),
+            coolTint: mix(InkPalette.coolTint[from], InkPalette.coolTint[to], t)
+        )
     }
 
     func imagePipeline(pixelFormat: MTLPixelFormat, screenID: String) -> MTLRenderPipelineState? {
@@ -197,9 +299,6 @@ private final class SplatoonSimulation {
         return frame
     }
 
-    private var bufferWidth: Int { 640 }
-    private var bufferHeight: Int { 360 }
-
     private func buildResources() {
         if library == nil {
             guard let url = resourceURL(name: "default", extension: "metallib"),
@@ -213,21 +312,25 @@ private final class SplatoonSimulation {
         }
         guard let library = self.library else { return }
 
-        // 1. Offscreen passes (.rgba32Float format)
-        let offscreenNames = ["passA", "passB", "passC", "passD"]
-        let neededOffscreen = offscreenNames.filter { pipelines[$0] == nil }
-        if !neededOffscreen.isEmpty {
+        // Simulation passes render the .rgba32Float state; pass C also writes
+        // the dye channel on its own for the image pass.
+        let attachmentFormats: [String: [MTLPixelFormat]] = [
+            "passA": [.rgba32Float],
+            "passB": [.rgba32Float],
+            "passC": [.rgba32Float, .r32Float],
+        ]
+        for (name, formats) in attachmentFormats where pipelines[name] == nil {
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction = library.makeFunction(name: "fullscreenVertex")
-            descriptor.colorAttachments[0].pixelFormat = .rgba32Float
-            for name in neededOffscreen {
-                descriptor.fragmentFunction = library.makeFunction(name: name)
-                do {
-                    pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
-                } catch {
-                    AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
-                    hasFatalError = true
-                }
+            descriptor.fragmentFunction = library.makeFunction(name: name)
+            for (index, format) in formats.enumerated() {
+                descriptor.colorAttachments[index].pixelFormat = format
+            }
+            do {
+                pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
+            } catch {
+                AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                hasFatalError = true
             }
         }
 
@@ -241,43 +344,48 @@ private final class SplatoonSimulation {
         }
     }
 
-    private func recreateTextures() {
-        let width = bufferWidth
-        let height = bufferHeight
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: width, height: height, mipmapped: false)
+    /// Every pass covers its whole target, so nothing is cleared or loaded and
+    /// the first iteration initialises all of them before the image reads dye.
+    private func makeTextures() {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba32Float,
+            width: Self.bufferWidth,
+            height: Self.bufferHeight,
+            mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .private
         bufferA = device.makeTexture(descriptor: descriptor)
         bufferB = device.makeTexture(descriptor: descriptor)
-        bufferCRead = device.makeTexture(descriptor: descriptor)
-        bufferCWrite = device.makeTexture(descriptor: descriptor)
-        bufferDRead = device.makeTexture(descriptor: descriptor)
-        bufferDWrite = device.makeTexture(descriptor: descriptor)
-        clearTextures()
-    }
+        bufferC = device.makeTexture(descriptor: descriptor)
+        descriptor.pixelFormat = .r32Float
+        dyeTexture = device.makeTexture(descriptor: descriptor)
 
-    private func clearTextures() {
-        guard let commandBuffer = queue.makeCommandBuffer() else { return }
-        [bufferA, bufferB, bufferCRead, bufferCWrite, bufferDRead, bufferDWrite].compactMap { $0 }.forEach { texture in
-            let descriptor = MTLRenderPassDescriptor()
-            descriptor.colorAttachments[0].texture = texture
-            descriptor.colorAttachments[0].loadAction = .clear
-            descriptor.colorAttachments[0].storeAction = .store
-            descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-            commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)?.endEncoding()
+        let targets: [String: [MTLTexture?]] = [
+            "passA": [bufferA],
+            "passB": [bufferB],
+            "passC": [bufferC, dyeTexture],
+        ]
+        for (name, textures) in targets {
+            let passDescriptor = MTLRenderPassDescriptor()
+            for (index, texture) in textures.enumerated() {
+                passDescriptor.colorAttachments[index].texture = texture
+                passDescriptor.colorAttachments[index].loadAction = .dontCare
+                passDescriptor.colorAttachments[index].storeAction = .store
+            }
+            passDescriptors[name] = passDescriptor
         }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
     }
 
-    private func encodeOffscreen(
+    private func encodeStep(
         _ pipelineName: String,
-        target: MTLTexture?,
-        input0: MTLTexture?,
-        uniforms: inout ShaderUniforms,
+        inputs: [MTLTexture?],
+        uniforms: inout SimUniforms,
         commandBuffer: MTLCommandBuffer
     ) {
-        guard let target else {
+        guard let descriptor = passDescriptors[pipelineName],
+              descriptor.colorAttachments[0].texture != nil
+        else {
             AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing target")
             hasFatalError = true
             return
@@ -287,26 +395,15 @@ private final class SplatoonSimulation {
             hasFatalError = true
             return
         }
-        uniforms.resolution = SIMD4(Float(target.width), Float(target.height), 1.0, settings.renderScale)
-        uniforms.bufferResolution = SIMD4(Float(target.width), Float(target.height), 1.0, uniforms.bufferResolution.w)
-        let descriptor = MTLRenderPassDescriptor()
-        descriptor.colorAttachments[0].texture = target
-        descriptor.colorAttachments[0].loadAction = .clear
-        descriptor.colorAttachments[0].storeAction = .store
-        descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
             hasFatalError = true
             return
         }
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(input0, index: 0)
-        if pipelineName == "passA" {
-            encoder.setFragmentTexture(seedTexture, index: 1)
-        } else if pipelineName == "passD" {
-            encoder.setFragmentTexture(bubbleMask, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<SimUniforms>.stride, index: 0)
+        for (index, texture) in inputs.enumerated() {
+            encoder.setFragmentTexture(texture, index: index)
         }
         encoder.setFragmentSamplerState(sampler, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -368,18 +465,6 @@ private final class SplatoonSimulation {
         ]
 
         return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
-    }
-
-    private func makeUniforms(time: Float, delta: Float) -> ShaderUniforms {
-        let shaderSeedIndex = settings.seedIndex == 0 ? randomShaderSeed : settings.seedIndex - 1
-        return ShaderUniforms(
-            resolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, settings.renderScale),
-            bufferResolution: SIMD4(Float(bufferWidth), Float(bufferHeight), 1.0, time),
-            mouse: SIMD4<Float>(0, 0, 0, 0),
-            customWarm: SIMD4(customWarmRGB, delta),
-            customCool: SIMD4(customCoolRGB, Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))),
-            state: SIMD4(frame, Int32(resolvedPaletteMode), Int32(settings.paletteCycleSeconds), Int32(shaderSeedIndex))
-        )
     }
 }
 
@@ -446,6 +531,16 @@ final class SplatoonRenderer: NSObject {
     private(set) var hasFatalError = false
     private let screenID: String
 
+    // nextDrawable() blocks for up to a second once the layer stops being
+    // displayed, which is how System Settings tears down its remotely hosted
+    // preview. Fetching drawables here keeps that wait off the host's main
+    // thread, which must stay free to process the teardown and set up the
+    // replacement preview.
+    private let drawableQueue = DispatchQueue(label: "ink.space4.Splatoon3Screensaver.drawable", qos: .userInteractive)
+    private let drawableLock = NSLock()
+    private var readyDrawable: CAMetalDrawable?
+    private var isFetchingDrawable = false
+
     init?(
         layer: CAMetalLayer,
         device: MTLDevice,
@@ -471,8 +566,8 @@ final class SplatoonRenderer: NSObject {
         SplatoonSimulationPool.shared.release(simulation)
     }
 
-    func reloadSettings(resetSimulation: Bool) {
-        simulation.reloadSettings(resetSimulation: resetSimulation)
+    func reloadSettings(forceReset: Bool = false) {
+        simulation.reloadSettings(forceReset: forceReset)
         hasFatalError = simulation.hasFatalError
     }
 
@@ -484,7 +579,7 @@ final class SplatoonRenderer: NSObject {
     func draw() {
         if hasFatalError || simulation.hasFatalError { return }
         guard let metalLayer = self.metalLayer,
-              let drawable = metalLayer.nextDrawable(),
+              let drawable = takeReadyDrawable(),
               let commandBuffer = simulation.makeCommandBuffer()
         else {
             #if DEBUG
@@ -494,19 +589,20 @@ final class SplatoonRenderer: NSObject {
         }
 
         let now = CACurrentMediaTime()
-        simulation.advanceIfNeeded(commandBuffer: commandBuffer, now: now)
-        let state = simulation.presentationState(drawableSize: metalLayer.drawableSize, now: now)
-        var uniforms = state.uniforms
+        simulation.advance(commandBuffer: commandBuffer, now: now)
+        let state = simulation.presentationState(now: now)
+        // The drawable may predate a resize, so size the image from its texture.
+        let drawableSize = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        var uniforms = makeImageUniforms(time: state.time, drawableSize: drawableSize, palette: state.palette)
 
         if loggedInitialFrames < 3 {
-            AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Drawing frame=\(self.simulation.currentFrame), drawable=\(metalLayer.drawableSize.debugDescription, privacy: .public), sharedBuffer=640x360")
+            AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] Drawing frame=\(self.simulation.currentFrame), drawable=\(drawableSize.debugDescription, privacy: .public), sharedBuffer=640x360")
             loggedInitialFrames += 1
         }
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = drawable.texture
-        descriptor.colorAttachments[0].loadAction = .clear
-        descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
 
         guard let imagePipeline = cachedImagePipeline(for: metalLayer.pixelFormat) else {
@@ -522,17 +618,126 @@ final class SplatoonRenderer: NSObject {
             return
         }
         encoder.setRenderPipelineState(imagePipeline)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(state.cTexture, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<ImageUniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ImageUniforms>.stride, index: 0)
+        encoder.setFragmentTexture(state.dyeTexture, index: 0)
         encoder.setFragmentTexture(state.bubbleTexture, index: 1)
-        encoder.setFragmentTexture(state.dTexture, index: 2)
-        encoder.setFragmentSamplerState(state.sampler, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
 
+        // Plain present only: present(afterMinimumDuration:) waits for the previous
+        // drawable to be displayed, which never happens once the host stops
+        // displaying the layer.
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    /// The drawable fetched since the last frame, or nil if it is not ready, in
+    /// which case this frame is skipped instead of waiting.
+    private func takeReadyDrawable() -> CAMetalDrawable? {
+        drawableLock.lock()
+        let drawable = readyDrawable
+        readyDrawable = nil
+        drawableLock.unlock()
+        fetchDrawableIfNeeded()
+        return drawable
+    }
+
+    private func fetchDrawableIfNeeded() {
+        drawableLock.lock()
+        guard !isFetchingDrawable, readyDrawable == nil, let layer = metalLayer else {
+            drawableLock.unlock()
+            return
+        }
+        isFetchingDrawable = true
+        drawableLock.unlock()
+
+        let screenID = self.screenID
+        drawableQueue.async { [weak self, weak layer] in
+            let start = CACurrentMediaTime()
+            let drawable = layer?.nextDrawable()
+            let waited = CACurrentMediaTime() - start
+            if waited > 0.25 {
+                AppLog.renderer.info("[Screen \(screenID, privacy: .public)] nextDrawable waited \(waited, format: .fixed(precision: 2))s; the layer is not being displayed")
+            }
+            guard let self else { return }
+            self.drawableLock.lock()
+            self.readyDrawable = drawable
+            self.isFetchingDrawable = false
+            self.drawableLock.unlock()
+        }
+    }
+
+    /// Bubble wobble, breathing and scroll from the original image shader,
+    /// folded into two affine maps of screen uv. Evaluating them here in double
+    /// precision keeps long-running animation smooth and leaves the fragment
+    /// shader only texture reads and a blend.
+    private func makeImageUniforms(time: Double, drawableSize: CGSize, palette: PaletteBlend) -> ImageUniforms {
+        let loop = 2000.0 / 60.0
+        let lp = fract(time / loop)
+        let fr = lp * 2000.0
+
+        let coolWobble = lp < 0.3265
+            ? mix(0.0, 1.58748, smoothstep(0.0, 0.3265, lp))
+            : mix(1.58748, 0.0, smoothstep(0.3265, 1.0, lp))
+        let warmWobble: Double
+        if lp < 0.2695 {
+            warmWobble = mix(0.0, -9.0, smoothstep(0.0, 0.2695, lp))
+        } else if lp < 0.6435 {
+            warmWobble = mix(-9.0, 12.0, smoothstep(0.2695, 0.6435, lp))
+        } else {
+            warmWobble = mix(12.0, 0.0, smoothstep(0.6435, 1.0, lp))
+        }
+
+        func breath(_ frame: Double, period: Double, peak: Double, scale: Double) -> Double {
+            let lf = frame.truncatingRemainder(dividingBy: period)
+            let s = lf < peak ? smoothstep(0.0, peak, lf) : 1.0 - smoothstep(peak, period, lf)
+            return mix(1.0, scale, s)
+        }
+        let coolScale = 4.48 * breath(fr, period: 400.0, peak: 226.0, scale: 2.30 / 2.24722)
+        let warmScaleX = 3.5 * breath(fr, period: 500.0, peak: 118.0, scale: 0.52037 / 0.5)
+        let warmScaleY = 3.5 * breath(fr, period: 500.0, peak: 351.0, scale: 0.52037 / 0.5)
+
+        // Columns of the shader's rot(): (cos, -sin) and (sin, cos).
+        func rotation(degrees: Double) -> (SIMD2<Double>, SIMD2<Double>) {
+            let a = degrees * .pi / 180.0
+            return (SIMD2(cos(a), -sin(a)), SIMD2(sin(a), cos(a)))
+        }
+        let (coolCol0, coolCol1) = rotation(degrees: coolWobble)
+        let (warmCol0, warmCol1) = rotation(degrees: warmWobble)
+
+        // Shader: buv = (uv.x, uv.y * yf), cen = (0.5, 0.5 * yf),
+        // cool = (R (buv - cen) + cen) * coolScale - scroll * (1, 1) * time,
+        // warm = R ((buv - cen) * warmScale) + cen + scroll * (1, -1) * time.
+        let width = max(Double(drawableSize.width), 1)
+        let yf = 2.0 * Double(drawableSize.height) / width
+        let center = SIMD2(0.5, 0.5 * yf)
+        let scroll = time / loop
+
+        let coolA = coolCol0 * coolScale
+        let coolB = coolCol1 * (coolScale * yf)
+        let coolOffset = (center - 0.5 * coolCol0 - (0.5 * yf) * coolCol1) * coolScale - SIMD2(scroll, scroll)
+        let warmA = warmCol0 * warmScaleX
+        let warmB = warmCol1 * (warmScaleY * yf)
+        let warmOffset = center - 0.5 * warmA - 0.5 * warmB + SIMD2(scroll, -scroll)
+
+        // The bubble sampler repeats, so whole-texture offsets can be dropped.
+        func wrapped(_ v: SIMD2<Double>) -> SIMD2<Float> {
+            SIMD2(Float(fract(v.x)), Float(fract(v.y)))
+        }
+        func floats(_ v: SIMD2<Double>) -> SIMD2<Float> {
+            SIMD2(Float(v.x), Float(v.y))
+        }
+
+        return ImageUniforms(
+            coolTransform: SIMD4(lowHalf: floats(coolA), highHalf: floats(coolB)),
+            warmTransform: SIMD4(lowHalf: floats(warmA), highHalf: floats(warmB)),
+            bubbleOffset: SIMD4(lowHalf: wrapped(coolOffset), highHalf: wrapped(warmOffset)),
+            warmBase: SIMD4(palette.warmBase, 0),
+            warmTint: SIMD4(palette.warmTint, 0),
+            coolBase: SIMD4(palette.coolBase, 0),
+            coolTint: SIMD4(palette.coolTint, 0)
+        )
     }
 
     private func cachedImagePipeline(for pixelFormat: MTLPixelFormat) -> MTLRenderPipelineState? {

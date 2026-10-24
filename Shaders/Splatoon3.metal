@@ -6,13 +6,26 @@ struct VertexOut {
     float2 uv;
 };
 
-struct Uniforms {
-    float4 resolution;
-    float4 bufferResolution;
-    float4 mouse;
-    float4 customWarm;
-    float4 customCool;
-    int4 state;
+// One simulation iteration. The CPU schedules iterations at a fixed 60 Hz, so
+// every encoded pass is a real step; frames 0-2 only initialise the state.
+struct SimUniforms {
+    int frame;
+    int seedIndex;
+    float dateSeconds;
+    float padding;
+};
+
+// Per-frame constants for the final image, computed on the CPU in double
+// precision: bubble wobble/breath/scroll as affine maps of screen uv, and the
+// palette blend (formerly Buffer D's phase) as base and tint colours.
+struct ImageUniforms {
+    float4 coolTransform;
+    float4 warmTransform;
+    float4 bubbleOffset;
+    float4 warmBase;
+    float4 warmTint;
+    float4 coolBase;
+    float4 coolTint;
 };
 
 constant float2 SIM = float2(640.0, 360.0);
@@ -29,71 +42,20 @@ vertex VertexOut fullscreenVertex(uint vid [[vertex_id]]) {
 struct ImageVertexOut {
     float4 position [[position]];
     float2 uv;
-    float4 coolRot;
-    float4 warmRot;
-    float coolScale;
-    float2 warmScale;
-    float time;
+    float2 coolUV;
+    float2 warmUV;
 };
 
-float2x2 rot(float a) {
-    float c = cos(a);
-    float s = sin(a);
-    return float2x2(float2(c, -s), float2(s, c));
-}
-
-float coolWob(float p) {
-    return p < 0.3265 ? mix(0.0, 1.58748, smoothstep(0.0, 0.3265, p))
-                      : mix(1.58748, 0.0, smoothstep(0.3265, 1.0, p));
-}
-
-float warmWob(float p) {
-    if (p < 0.2695) { return mix(0.0, -9.0, smoothstep(0.0, 0.2695, p)); }
-    if (p < 0.6435) { return mix(-9.0, 12.0, smoothstep(0.2695, 0.6435, p)); }
-    return mix(12.0, 0.0, smoothstep(0.6435, 1.0, p));
-}
-
-float coolBreath(float fr) {
-    float lf = fmod(fr, 400.0);
-    float s = lf < 226.0 ? smoothstep(0.0, 226.0, lf) : 1.0 - smoothstep(226.0, 400.0, lf);
-    return mix(1.0, 2.30 / 2.24722, s);
-}
-
-float warmBreathX(float fr) {
-    float lf = fmod(fr, 500.0);
-    float s = lf < 118.0 ? smoothstep(0.0, 118.0, lf) : 1.0 - smoothstep(118.0, 500.0, lf);
-    return mix(1.0, 0.52037 / 0.5, s);
-}
-
-float warmBreathY(float fr) {
-    float lf = fmod(fr, 500.0);
-    float s = lf < 351.0 ? smoothstep(0.0, 351.0, lf) : 1.0 - smoothstep(351.0, 500.0, lf);
-    return mix(1.0, 0.52037 / 0.5, s);
-}
-
-vertex ImageVertexOut imageVertex(uint vid [[vertex_id]], constant Uniforms& u [[buffer(0)]]) {
+vertex ImageVertexOut imageVertex(uint vid [[vertex_id]], constant ImageUniforms& u [[buffer(0)]]) {
     float2 positions[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
     ImageVertexOut out;
     out.position = float4(positions[vid], 0.0, 1.0);
     out.uv = positions[vid] * 0.5 + 0.5;
-
-    float loop = 2000.0 / 60.0;
-    float time = u.bufferResolution.w;
-    float lp = fract(time / loop);
-    float fr = lp * 2000.0;
-    float2 wsc = float2(warmBreathX(fr), warmBreathY(fr));
-
-    float2x2 cr = rot(coolWob(lp) * M_PI_F / 180.0);
-    float2x2 wr = rot(warmWob(lp) * M_PI_F / 180.0);
-    out.coolRot = float4(cr[0], cr[1]);
-    out.warmRot = float4(wr[0], wr[1]);
-    out.coolScale = 4.48 * coolBreath(fr);
-    out.warmScale = wsc * 3.5;
-    out.time = time;
+    // Both bubble layers are affine in uv, so interpolating them is exact.
+    out.coolUV = float2x2(u.coolTransform.xy, u.coolTransform.zw) * out.uv + u.bubbleOffset.xy;
+    out.warmUV = float2x2(u.warmTransform.xy, u.warmTransform.zw) * out.uv + u.bubbleOffset.zw;
     return out;
 }
-
-
 
 float4 readTex(texture2d<float> tex, int2 p) {
     if (tex.get_width() == 0) { return float4(0.0); }
@@ -151,25 +113,20 @@ float fbm(float2 p) {
 }
 
 fragment float4 passA(VertexOut in [[stage_in]],
-                      constant Uniforms& u [[buffer(0)]],
+                      constant SimUniforms& u [[buffer(0)]],
                       texture2d<float> cPrev [[texture(0)]],
                       texture2d<float> seedTex [[texture(1)]],
                       sampler s [[sampler(0)]]) {
-    float2 res = u.resolution.xy;
+    float2 res = SIM;
     float2 uv = (floor(float2(in.uv.x, 1.0 - in.uv.y) * SIM) + 0.5) / SIM;
-    float time = u.bufferResolution.w;
-    float timeDelta = u.customWarm.w;
-    float dateW = u.customCool.w;
-    int frame = u.state.x;
-    float rate = 60.0 * (time < 0.6 ? 12.0 : 1.0);
 
-    if (frame < 3) {
-        int seedIdx = u.state.w;
-        if (seedIdx < 6) {
+    if (u.frame < 3) {
+        if (u.seedIndex < 6) {
             float4 val = seedTex.sample(s, float2(in.uv.x, 1.0 - in.uv.y));
             return float4(val.x, -val.y, val.z, val.w);
         }
-        
+
+        float dateW = u.dateSeconds;
         float2 r = float2(fract(dateW * 0.0173), fract(dateW * 0.0411)) * 53.0;
         float2 q = float2(uv.x * 1.7777, uv.y);
         float m = (uv.y - 0.5)
@@ -182,11 +139,6 @@ fragment float4 passA(VertexOut in [[stage_in]],
             -(fbm(q * 3.0 + r + float2(e, 0.0)) - fbm(q * 3.0 + r - float2(e, 0.0)))
         ) / (2.0 * e);
         return float4(vel * 0.6, 0.0, dye);
-    }
-
-    bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
-    if (!simStep) {
-        return readTex(cPrev, int2(float2(in.uv.x, 1.0 - in.uv.y) * res));
     }
 
     float4 c = field(cPrev, uv, res);
@@ -208,16 +160,11 @@ fragment float4 passA(VertexOut in [[stage_in]],
 }
 
 fragment float4 passB(VertexOut in [[stage_in]],
-                      constant Uniforms& u [[buffer(0)]],
+                      constant SimUniforms& u [[buffer(0)]],
                       texture2d<float> aTex [[texture(0)]]) {
-    float2 res = u.resolution.xy;
+    float2 res = SIM;
     float2 uv = (floor(float2(in.uv.x, 1.0 - in.uv.y) * SIM) + 0.5) / SIM;
-    float time = u.bufferResolution.w;
-    float timeDelta = u.customWarm.w;
-    int frame = u.state.x;
-    float rate = 60.0 * (time < 0.5 ? 15.0 : 1.0);
-    bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
-    if (!simStep) { return readTex(aTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res)); }
+    if (u.frame < 3) { return readTex(aTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res)); }
 
     float4 c = field(aTex, uv, res);
     float lx = field(aTex, uv - float2(TX.x, 0.0), res).x;
@@ -226,136 +173,48 @@ fragment float4 passB(VertexOut in [[stage_in]],
     return float4(c.x, c.y, c.z + 0.5 * negDiv, c.w);
 }
 
-fragment float4 passC(VertexOut in [[stage_in]],
-                      constant Uniforms& u [[buffer(0)]],
-                      texture2d<float> bTex [[texture(0)]]) {
-    float2 res = u.resolution.xy;
+struct PassCOut {
+    float4 state [[color(0)]];
+    // Dye only, so the full-resolution image pass samples a 4-byte texel
+    // instead of the 16-byte simulation state.
+    float dye [[color(1)]];
+};
+
+fragment PassCOut passC(VertexOut in [[stage_in]],
+                        constant SimUniforms& u [[buffer(0)]],
+                        texture2d<float> bTex [[texture(0)]]) {
+    float2 res = SIM;
     float2 uv = (floor(float2(in.uv.x, 1.0 - in.uv.y) * SIM) + 0.5) / SIM;
-    float time = u.bufferResolution.w;
-    float timeDelta = u.customWarm.w;
-    int frame = u.state.x;
-    float rate = 60.0 * (time < 0.5 ? 15.0 : 1.0);
-    bool simStep = (frame >= 3) && (floor(time * rate) != floor((time - timeDelta) * rate));
-    if (!simStep) { return readTex(bTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res)); }
-    float2 vel = field(bTex, uv, res).xy;
-    return field(bTex, uv - vel * TX, res);
-}
-
-fragment float4 passD(VertexOut in [[stage_in]],
-                      constant Uniforms& u [[buffer(0)]],
-                      texture2d<float> dPrev [[texture(0)]],
-                      texture2d<float> bubble [[texture(1)]]) {
-    int2 p = int2(float2(in.uv.x, 1.0 - in.uv.y) * u.resolution.xy);
-    if (p.x < 256 && p.y < 128) {
-        if (u.state.x < 1) { return float4(bubble.read(uint2(p)).x); }
-        return readTex(dPrev, p);
-    }
-
-    float4 s = readTex(dPrev, int2(256, 0));
-    float phase = s.x;
-    float target = s.y;
-    float prevDown = s.z;
-
-    if (u.state.y == 1) {
-        // Auto-cycling mode: animate phase based on absolute time
-        float time = u.bufferResolution.w;
-        float T = max(1.0, float(u.state.z)); // cycle interval in seconds per game
-        float t_trans = 4.0; // transition duration (4 seconds)
-        float cycleIndex = floor(time / T);
-        float rem = fmod(time, T);
-        if (rem < T - t_trans) {
-            phase = cycleIndex;
-        } else {
-            phase = cycleIndex + (rem - (T - t_trans)) / t_trans;
-        }
-        target = phase;
-        prevDown = 0.0;
+    PassCOut out;
+    if (u.frame < 3) {
+        out.state = readTex(bTex, int2(float2(in.uv.x, 1.0 - in.uv.y) * res));
     } else {
-        // Locked color modes
-        if (u.state.y == 2) { phase = 1.0; } // Splatoon 1
-        else if (u.state.y == 3) { phase = 2.0; } // Splatoon 2
-        else { phase = 0.0; } // Splatoon 3 (mode 4) and Custom (mode 5)
-        target = phase;
-        prevDown = 0.0;
+        float2 vel = field(bTex, uv, res).xy;
+        out.state = field(bTex, uv - vel * TX, res);
     }
-    return float4(phase, target, prevDown, 1.0);
+    out.dye = out.state.w;
+    return out;
 }
-
-
 
 constexpr sampler bubbleSampler(address::repeat, filter::linear);
-float bubbleTex(texture2d<float> bubbleTexObj, float2 pp) {
-    return bubbleTexObj.sample(bubbleSampler, pp).x;
-}
-
 constexpr sampler dyeSampler(s_address::repeat, t_address::clamp_to_edge, filter::linear);
-float dyeAt(texture2d<float> cTex, float2 uv) {
-    return cTex.sample(dyeSampler, uv).w;
-}
-
-float3 paletteWarm(int idx, constant Uniforms& u) {
-    int mode = u.state.y;
-    if (mode == 5) { return u.customWarm.xyz; }
-    if (mode == 2) { return float3(0.945098, 0.098039, 0.0); } // Splatoon 1 (Orange)
-    if (mode == 3) { return float3(0.980392, 0.054902, 0.470588); } // Splatoon 2 (Pink)
-    if (mode == 4) { return float3(0.729412, 1.0, 0.039216); } // Splatoon 3 (Yellow)
-    
-    // mode == 1 (Cycle)
-    if (idx == 1) { return float3(0.945098, 0.098039, 0.0); }
-    if (idx == 2) { return float3(0.980392, 0.054902, 0.470588); }
-    return float3(0.729412, 1.0, 0.039216);
-}
-
-float3 paletteCool(int idx, constant Uniforms& u) {
-    int mode = u.state.y;
-    if (mode == 5) { return u.customCool.xyz; }
-    if (mode == 2) { return float3(0.0, 0.027451, 0.956863); } // Splatoon 1 (Blue)
-    if (mode == 3) { return float3(0.039216, 0.921569, 0.031373); } // Splatoon 2 (Green)
-    if (mode == 4) { return float3(0.113725, 0.039216, 1.0); } // Splatoon 3 (Purple)
-    
-    // mode == 1 (Cycle)
-    if (idx == 1) { return float3(0.0, 0.027451, 0.956863); }
-    if (idx == 2) { return float3(0.039216, 0.921569, 0.031373); }
-    return float3(0.113725, 0.039216, 1.0);
-}
 
 fragment float4 imagePass(ImageVertexOut in [[stage_in]],
-                          constant Uniforms& u [[buffer(0)]],
-                          texture2d<float> cTex [[texture(0)]],
-                          texture2d<float> bubbleTexObj [[texture(1)]],
-                          texture2d<float> dTex [[texture(2)]]) {
-    float2 R = u.resolution.xy;
+                          constant ImageUniforms& u [[buffer(0)]],
+                          texture2d<float> dyeTex [[texture(0)]],
+                          texture2d<float> bubbleTex [[texture(1)]]) {
     float2 uv = in.uv;
-    float phase = readTex(dTex, int2(256, 0)).x;
-    int from = int(fmod(floor(phase), 3.0));
-    int to = int(fmod(floor(phase) + 1.0, 3.0));
-    float tt = smoothstep(0.0, 1.0, fract(phase));
-
     float2 br = 0.5 / SIM;
-    float dye = (dyeAt(cTex, uv) * 2.0
-        + dyeAt(cTex, uv + float2(br.x, 0.0))
-        + dyeAt(cTex, uv - float2(br.x, 0.0))
-        + dyeAt(cTex, uv + float2(0.0, br.y))
-        + dyeAt(cTex, uv - float2(0.0, br.y))) / 6.0;
+    float dye = (dyeTex.sample(dyeSampler, uv).x * 2.0
+        + dyeTex.sample(dyeSampler, uv + float2(br.x, 0.0)).x
+        + dyeTex.sample(dyeSampler, uv - float2(br.x, 0.0)).x
+        + dyeTex.sample(dyeSampler, uv + float2(0.0, br.y)).x
+        + dyeTex.sample(dyeSampler, uv - float2(0.0, br.y)).x) / 6.0;
     float a = clamp(dye * 248.659 - 48.757, 0.0, 1.0);
 
-    float loop = 2000.0 / 60.0;
-    float time = in.time;
-    float yf = 2.0 * R.y / R.x;
-    float2 cen = float2(0.5, 0.5 * yf);
-    float2 buv = float2(uv.x, uv.y * yf);
-    
-    float2x2 coolRot = float2x2(in.coolRot.xy, in.coolRot.zw);
-    float2x2 warmRot = float2x2(in.warmRot.xy, in.warmRot.zw);
-    float2 cb = (coolRot * (buv - cen) + cen) * in.coolScale;
-    float2 wb = (warmRot * ((buv - cen) * in.warmScale) + cen);
-    float scrl = 1.0 / loop;
-    float bb = bubbleTex(bubbleTexObj, cb + float2(-scrl, -scrl) * time);
-    float bo = bubbleTex(bubbleTexObj, wb + float2(scrl, -scrl) * time);
-
-    float3 warmTint[3] = { float3(0.113726, 0.0, 0.2), float3(0.003922, 0.027451, 0.0), float3(0.0, 0.019608, 0.086275) };
-    float3 coolTint[3] = { float3(0.031373, -0.003922, -0.019608), float3(0.0, 0.05098, 0.003922), float3(0.121569, 0.0, -0.003922) };
-    float3 warmC = mix(paletteWarm(from, u) + bo * warmTint[from], paletteWarm(to, u) + bo * warmTint[to], tt);
-    float3 coolC = mix(paletteCool(from, u) + bb * coolTint[from], paletteCool(to, u) + bb * coolTint[to], tt);
+    float bb = bubbleTex.sample(bubbleSampler, in.coolUV).x;
+    float bo = bubbleTex.sample(bubbleSampler, in.warmUV).x;
+    float3 warmC = u.warmBase.xyz + bo * u.warmTint.xyz;
+    float3 coolC = u.coolBase.xyz + bb * u.coolTint.xyz;
     return float4(mix(coolC, warmC, a), 1.0);
 }

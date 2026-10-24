@@ -25,7 +25,10 @@ multi-GPU setups.
 Main features:
 
 - Native Metal renderer.
-- Configurable FPS cap: 30, 60, 120, or display sync.
+- Configurable frame rate: 30, 60, 120, or Auto (the display's refresh rate).
+  The ink moves at the same speed at every frame rate.
+- Battery saver, on by default: runs at 30 fps on battery power or in Low
+  Power Mode.
 - Palette modes: random on launch, timed cycle, Splatoon 1, Splatoon 2,
   Splatoon 3, or custom warm/cool colors.
 - Configurable timed cycle interval: 30, 60, 90, or 120 seconds, defaulting
@@ -57,7 +60,7 @@ Main features:
      sudo xattr -cr /Library/Screen\ Savers/splatoon3-boot.saver
      ```
 
-4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize colors, frame rate, palette cycling, and the initial simulation state.
+4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize ink colors, palette cycling, the starting pattern, frame rate, and the battery saver.
 
 ## Log Feedback
 
@@ -90,6 +93,12 @@ Requirements:
 
 - macOS 13 or newer.
 - Full Xcode installation with `xcrun`, `metal`, and `swiftc` available.
+  Xcode 26 and newer download the Metal compiler separately; if `make` reports
+  a missing Metal Toolchain, run:
+
+```sh
+xcodebuild -downloadComponent MetalToolchain
+```
 
 Build only:
 
@@ -130,6 +139,8 @@ Important files:
   frame rendering.
 - `Sources/ConfigSheetController.swift`: options sheet UI.
 - `Sources/Settings.swift`: `ScreenSaverDefaults` persistence.
+- `Sources/PowerMonitor.swift`: battery power and Low Power Mode detection for
+  the battery saver.
 - `Shaders/Splatoon3.metal`: shader passes.
 - `Resources/bubble-mask.raw`: decoded 256x128 bubble mask from the original
   Shadertoy `Buffer D`.

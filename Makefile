@@ -7,7 +7,7 @@ PACKAGE_BUNDLE := $(DIST_DIR)/$(PACKAGE_NAME)
 CONTENTS := $(BUNDLE)/Contents
 MACOS := $(CONTENTS)/MacOS
 RESOURCES := $(CONTENTS)/Resources
-SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/ConfigSheetController.swift Sources/Splatoon3ScreensaverView.swift
+SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/PowerMonitor.swift Sources/ConfigSheetController.swift Sources/Splatoon3ScreensaverView.swift
 METAL_SOURCE := Shaders/Splatoon3.metal
 MIN_MACOS := 13.0
 
@@ -31,7 +31,7 @@ $(BUNDLE): FORCE
 		-emit-library -module-name $(PRODUCT) \
 		-o "$(BUILD_DIR)/$(PRODUCT).dylib" \
 		$(SAVER_SWIFT_SOURCES) \
-		-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore
+		-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore -framework IOKit
 	cp "$(BUILD_DIR)/$(PRODUCT).dylib" "$(MACOS)/$(PRODUCT)"
 
 install: package

@@ -23,7 +23,8 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
 主要功能：
 
 - 原生 Metal 渲染器。
-- 可配置 FPS 上限：30、60、120，或跟随显示器刷新。
+- 可配置帧率：30、60、120，或“自动”（跟随屏幕刷新率）。任何帧率下墨水流动速度都一致。
+- 电池省电（默认开启）：使用电池供电或开启低电量模式时以 30 fps 运行。
 - 调色板模式：启动时随机、历代循环、Splatoon 1、Splatoon 2、Splatoon 3，
   或自定义暖色/冷色。
 - 历代循环间隔可配置：30、60、90、120 秒，默认 60 秒。
@@ -57,7 +58,7 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
      ```
 
 4. **选择并配置**：打开 **系统设置**，进入 **墙纸 / 屏幕保护程序**，选择
-   **Splatoon 3 Boot**，点击 **选项** 调整颜色、帧率、历代循环和初始模拟状态。
+   **Splatoon 3 Boot**，点击 **选项** 调整墨水配色、历代循环、初始图案、帧率和电池省电。
 
 ## 日志反馈
 
@@ -88,7 +89,12 @@ log stream --predicate 'subsystem == "ink.space4.Splatoon3Screensaver"' --style 
 要求：
 
 - macOS 13 或更新版本。
-- 完整安装 Xcode，并确保 `xcrun`、`metal`、`swiftc` 可用。
+- 完整安装 Xcode，并确保 `xcrun`、`metal`、`swiftc` 可用。Xcode 26 及更新版本
+  需要单独下载 Metal 编译器；如果 `make` 提示缺少 Metal Toolchain，请运行：
+
+```sh
+xcodebuild -downloadComponent MetalToolchain
+```
 
 只构建：
 
@@ -128,6 +134,7 @@ git push origin v1.0.0
 - `Sources/Renderer.swift`：Metal pipeline 创建、反馈纹理和帧渲染。
 - `Sources/ConfigSheetController.swift`：选项面板 UI。
 - `Sources/Settings.swift`：`ScreenSaverDefaults` 持久化。
+- `Sources/PowerMonitor.swift`：检测电池供电和低电量模式，用于电池省电。
 - `Shaders/Splatoon3.metal`：shader passes。
 - `Resources/bubble-mask.raw`：从原始 Shadertoy `Buffer D` 解码出的
   256x128 泡泡遮罩。
