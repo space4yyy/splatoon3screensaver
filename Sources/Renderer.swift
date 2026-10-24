@@ -86,6 +86,9 @@ private func fract(_ x: Double) -> Double {
 private final class SplatoonSimulation {
     static let bufferWidth = 640
     static let bufferHeight = 360
+    /// The image's dye blur on a half-texel lattice; see passKnots.
+    private static let knotWidth = 1280
+    private static let knotHeight = 721
     /// The original shader advances its fluid 60 times per second.
     private static let stepInterval = 1.0 / 60.0
     private static let maxStepsPerFrame = 4
@@ -94,15 +97,14 @@ private final class SplatoonSimulation {
     private let queue: MTLCommandQueue
     private let resourceBundle: Bundle
 
-    private var pipelines: [String: MTLRenderPipelineState] = [:]
+    private var pipelines: [String: MTLComputePipelineState] = [:]
     private var imagePipelines: [UInt: MTLRenderPipelineState] = [:]
-    private var passDescriptors: [String: MTLRenderPassDescriptor] = [:]
-    private var sampler: MTLSamplerState?
     private var library: MTLLibrary?
     private var bufferA: MTLTexture?
     private var bufferB: MTLTexture?
     private var bufferC: MTLTexture?
     private var dyeTexture: MTLTexture?
+    private var knotTexture: MTLTexture?
     private var bubbleMask: MTLTexture?
     private var seedTexture: MTLTexture?
     private var lastSeedIndex: Int = -1
@@ -186,9 +188,10 @@ private final class SplatoonSimulation {
         queue.makeCommandBuffer()
     }
 
-    /// Encodes the simulation steps that are due. Steps run on a fixed 60 Hz
-    /// clock, so lower frame rates encode two steps per frame instead of slowing
-    /// the ink down, and frames between steps (120 fps) encode nothing.
+    /// Encodes the simulation steps that are due, then the knots of the last
+    /// one. Steps run on a fixed 60 Hz clock, so lower frame rates encode two
+    /// steps per frame instead of slowing the ink down, and frames between
+    /// steps (120 fps) encode nothing.
     func advance(commandBuffer: MTLCommandBuffer, now: CFTimeInterval) {
         lock.lock()
         defer { lock.unlock() }
@@ -222,22 +225,33 @@ private final class SplatoonSimulation {
             lastSeedIndex = shaderSeedIndex
         }
 
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            AppLog.renderer.error("Simulation could not create compute encoder")
+            hasFatalError = true
+            return
+        }
         let dateSeconds = Float(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86400.0))
+        let cells = MTLSize(width: Self.bufferWidth, height: Self.bufferHeight, depth: 1)
+        var uniforms = SimUniforms(frame: frame, seedIndex: Int32(shaderSeedIndex), dateSeconds: dateSeconds)
         for _ in 0..<steps {
-            var uniforms = SimUniforms(frame: frame, seedIndex: Int32(shaderSeedIndex), dateSeconds: dateSeconds)
-            encodeStep("passA", inputs: [bufferC, seedTexture], uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeStep("passB", inputs: [bufferA], uniforms: &uniforms, commandBuffer: commandBuffer)
-            encodeStep("passC", inputs: [bufferB], uniforms: &uniforms, commandBuffer: commandBuffer)
+            uniforms.frame = frame
+            dispatch("passA", textures: [bufferC, seedTexture, bufferA], uniforms: &uniforms, threads: cells, encoder: encoder)
+            dispatch("passB", textures: [bufferA, bufferB], uniforms: &uniforms, threads: cells, encoder: encoder)
+            dispatch("passC", textures: [bufferB, bufferC, dyeTexture], uniforms: &uniforms, threads: cells, encoder: encoder)
             if frame < Int32.max { frame += 1 }
         }
+        // One thread per 2 x 2 knots.
+        let knotBlocks = MTLSize(width: Self.knotWidth / 2, height: (Self.knotHeight + 1) / 2, depth: 1)
+        dispatch("passKnots", textures: [dyeTexture, knotTexture], uniforms: &uniforms, threads: knotBlocks, encoder: encoder)
+        encoder.endEncoding()
     }
 
-    func presentationState(now: CFTimeInterval) -> (time: Double, palette: PaletteBlend, dyeTexture: MTLTexture?, bubbleTexture: MTLTexture?) {
+    func presentationState(now: CFTimeInterval) -> (time: Double, palette: PaletteBlend, knotTexture: MTLTexture?, bubbleTexture: MTLTexture?) {
         lock.lock()
         defer { lock.unlock() }
 
         let time = now - startTime
-        return (time, paletteBlendLocked(time: time), dyeTexture, bubbleMask)
+        return (time, paletteBlendLocked(time: time), knotTexture, bubbleMask)
     }
 
     private func paletteBlendLocked(time: Double) -> PaletteBlend {
@@ -312,40 +326,25 @@ private final class SplatoonSimulation {
         }
         guard let library = self.library else { return }
 
-        // Simulation passes render the .rgba32Float state; pass C also writes
-        // the dye channel on its own for the image pass.
-        let attachmentFormats: [String: [MTLPixelFormat]] = [
-            "passA": [.rgba32Float],
-            "passB": [.rgba32Float],
-            "passC": [.rgba32Float, .r32Float],
-        ]
-        for (name, formats) in attachmentFormats where pipelines[name] == nil {
-            let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = library.makeFunction(name: "fullscreenVertex")
-            descriptor.fragmentFunction = library.makeFunction(name: name)
-            for (index, format) in formats.enumerated() {
-                descriptor.colorAttachments[index].pixelFormat = format
+        // The simulation passes are compute kernels over the .rgba32Float
+        // state; pass C also writes the dye on its own for passKnots.
+        for name in ["passA", "passB", "passC", "passKnots"] where pipelines[name] == nil {
+            guard let function = library.makeFunction(name: name) else {
+                AppLog.renderer.error("Missing simulation function \(name, privacy: .public)")
+                hasFatalError = true
+                continue
             }
             do {
-                pipelines[name] = try device.makeRenderPipelineState(descriptor: descriptor)
+                pipelines[name] = try device.makeComputePipelineState(function: function)
             } catch {
-                AppLog.renderer.error("Failed offscreen pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                AppLog.renderer.error("Failed simulation pipeline \(name, privacy: .public): \(String(describing: error), privacy: .public)")
                 hasFatalError = true
             }
         }
-
-        if self.sampler == nil {
-            let samplerDescriptor = MTLSamplerDescriptor()
-            samplerDescriptor.minFilter = .linear
-            samplerDescriptor.magFilter = .linear
-            samplerDescriptor.sAddressMode = .clampToEdge
-            samplerDescriptor.tAddressMode = .clampToEdge
-            self.sampler = device.makeSamplerState(descriptor: samplerDescriptor)
-        }
     }
 
-    /// Every pass covers its whole target, so nothing is cleared or loaded and
-    /// the first iteration initialises all of them before the image reads dye.
+    /// Every pass writes its whole target, so the first iteration initialises
+    /// all of them before the image reads the knots.
     private func makeTextures() {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba32Float,
@@ -353,61 +352,41 @@ private final class SplatoonSimulation {
             height: Self.bufferHeight,
             mipmapped: false
         )
-        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = .private
         bufferA = device.makeTexture(descriptor: descriptor)
         bufferB = device.makeTexture(descriptor: descriptor)
         bufferC = device.makeTexture(descriptor: descriptor)
         descriptor.pixelFormat = .r32Float
         dyeTexture = device.makeTexture(descriptor: descriptor)
+        descriptor.width = Self.knotWidth
+        descriptor.height = Self.knotHeight
+        knotTexture = device.makeTexture(descriptor: descriptor)
 
-        let targets: [String: [MTLTexture?]] = [
-            "passA": [bufferA],
-            "passB": [bufferB],
-            "passC": [bufferC, dyeTexture],
-        ]
-        for (name, textures) in targets {
-            let passDescriptor = MTLRenderPassDescriptor()
-            for (index, texture) in textures.enumerated() {
-                passDescriptor.colorAttachments[index].texture = texture
-                passDescriptor.colorAttachments[index].loadAction = .dontCare
-                passDescriptor.colorAttachments[index].storeAction = .store
-            }
-            passDescriptors[name] = passDescriptor
+        if [bufferA, bufferB, bufferC, dyeTexture, knotTexture].contains(where: { $0 == nil }) {
+            AppLog.renderer.error("Failed to create simulation textures")
+            hasFatalError = true
         }
     }
 
-    private func encodeStep(
+    private func dispatch(
         _ pipelineName: String,
-        inputs: [MTLTexture?],
+        textures: [MTLTexture?],
         uniforms: inout SimUniforms,
-        commandBuffer: MTLCommandBuffer
+        threads: MTLSize,
+        encoder: MTLComputeCommandEncoder
     ) {
-        guard let descriptor = passDescriptors[pipelineName],
-              descriptor.colorAttachments[0].texture != nil
-        else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing target")
-            hasFatalError = true
-            return
-        }
         guard let pipeline = pipelines[pipelineName] else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) missing pipeline")
+            AppLog.renderer.error("Simulation pass \(pipelineName, privacy: .public) missing pipeline")
             hasFatalError = true
             return
         }
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            AppLog.renderer.error("Offscreen pass \(pipelineName, privacy: .public) could not create encoder")
-            hasFatalError = true
-            return
-        }
-        encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<SimUniforms>.stride, index: 0)
-        for (index, texture) in inputs.enumerated() {
-            encoder.setFragmentTexture(texture, index: index)
-        }
-        encoder.setFragmentSamplerState(sampler, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        encoder.endEncoding()
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBytes(&uniforms, length: MemoryLayout<SimUniforms>.stride, index: 0)
+        encoder.setTextures(textures, range: 0..<textures.count)
+        let width = pipeline.threadExecutionWidth
+        let height = max(1, min(pipeline.maxTotalThreadsPerThreadgroup / width, 8))
+        encoder.dispatchThreads(threads, threadsPerThreadgroup: MTLSize(width: width, height: height, depth: 1))
     }
 
     private func makeBubbleMaskTexture() -> MTLTexture? {
@@ -620,7 +599,7 @@ final class SplatoonRenderer: NSObject {
         encoder.setRenderPipelineState(imagePipeline)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<ImageUniforms>.stride, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ImageUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(state.dyeTexture, index: 0)
+        encoder.setFragmentTexture(state.knotTexture, index: 0)
         encoder.setFragmentTexture(state.bubbleTexture, index: 1)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()

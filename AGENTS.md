@@ -11,8 +11,8 @@ Maintain a native macOS `.saver` recreation of Shadertoy `f3SGWc`
   the `CAMetalLayer`, resolves the correct screen Metal device, updates drawable
   size, and forwards `animateOneFrame()` to the renderer.
 - `Sources/Renderer.swift`: Metal renderer. It builds the shader pipelines,
-  owns feedback textures, steps passes A/B/C, computes the palette blend and
-  bubble transforms on the CPU, and presents the final image.
+  owns feedback textures, steps passes A/B/C as compute kernels, computes the
+  palette blend and bubble transforms on the CPU, and presents the final image.
 - `Sources/ConfigSheetController.swift`: options sheet with the palette picker,
   cycle interval, custom inks, starting pattern, frame rate, and battery saver.
 - `Sources/Settings.swift`: `ScreenSaverDefaults` storage. The module name is
@@ -43,7 +43,7 @@ missing Metal Toolchain, install it with
 - Do not reintroduce file-based diagnostics. Use Unified Logging through
   `AppLog.renderer`.
 - The fluid steps on a fixed 60 Hz clock in `SplatoonSimulation.advance`, not
-  in the shader. Every encoded pass A/B/C is a real step (frames 0-2
+  in the shader. Every dispatched pass A/B/C is a real step (frames 0-2
   initialise), so frame rate changes neither speed up nor slow down the ink.
 - Only a starting pattern change restarts the simulation. Palette, colour, and
   frame rate changes apply to the running animation.
@@ -98,15 +98,37 @@ Original dependencies:
 - `Image` reads Buffer C and Buffer D.
 
 Metal and Shadertoy have different screen/texture coordinate conventions. The
-current shader intentionally flips y in offscreen simulation passes so that
-feedback writes and later `texture.read()` calls address the same rows.
+simulation kernels run one thread per texel and texel row 0 holds the
+original's bottom row, so feedback reads and writes address the same rows and
+the image pass addresses them with screen uv directly.
 
 Port differences that keep the output identical while costing less:
 
 - `Buffer D` is not rendered. Its palette phase is a pure function of time and
   palette mode, so `paletteBlendLocked` computes it on the CPU. The bubble mask
   is uploaded directly as a texture.
-- Pass C also writes the dye channel to an `r32Float` texture, so the
-  full-resolution image pass samples 4-byte texels instead of the 16-byte state.
+- Passes A/B/C are compute kernels in one encoder per frame. Their neighbour
+  fetches land on texel centres, so they read texels directly; only pass C's
+  advection interpolates.
+- The image's 5-tap dye blur is bilinear between the knots of a half-texel
+  lattice. `passKnots` evaluates it exactly at those 1280x721 knots after the
+  last step of a frame, and the image pass samples that texture once per pixel
+  instead of taking five `r32Float` samples. Pass C writes the dye to its own
+  `r32Float` texture for `passKnots`.
 - Bubble wobble, breathing, and scroll are evaluated in double precision on
   the CPU as affine maps of screen uv.
+
+## Performance
+
+Measured at 2940x1912 plus a 2560x1080 external display, 60 fps, on an M5:
+
+- The full-resolution image pass is most of the GPU time and is now close to
+  the cost of writing the drawable. Simulation steps plus knots are about a
+  third. GPU power is about 0.12 W above idle (0.19 W before the knot
+  lattice), and Activity Monitor shows about 12% GPU for the process.
+- CPU is about 5% of one core, almost all Metal and Core Animation per-frame
+  overhead (command buffer submission, the drawable's render encoder, drawable
+  bookkeeping). It scales with frame rate and screen count, not shader work.
+- Activity Monitor's GPU % and GPU History are busy-time figures. When
+  WindowServer is already busy, for example during screen capture or remote
+  desktop, they barely move when the screen saver starts; compare GPU power.
