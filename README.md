@@ -46,11 +46,11 @@ Main features:
 ## Getting Started
 
 1. **Download & Extract**: Download `splatoon3-boot.saver.zip` from the [latest GitHub Release](https://github.com/space4yyy/splatoon3screensaver/releases/latest), then unzip it to obtain `splatoon3-boot.saver`.
-2. **Install**: Double-click `splatoon3-boot.saver` to install it. macOS will prompt you to choose:
-   - **Install for this user only** (Installs to `~/Library/Screen Savers/`)
-   - **Install for all users** (Installs to `/Library/Screen Savers/`, requires administrator password)
-
-3. **Clear Quarantine Flag**: Because this screensaver is compiled outside the Mac App Store, macOS Gatekeeper may block it from running. Open your **Terminal** app and run the appropriate command below based on your installation choice:
+2. **Clear Quarantine Flag**: This screensaver is ad-hoc signed and not notarized by Apple. macOS quarantines downloaded files, and Gatekeeper may then refuse to open it, saying Apple could not verify it is free of malware, or block it from running, leaving a black preview. Before installing, open your **Terminal** app and run this command, adjusting the path if you unzipped it elsewhere:
+   ```sh
+   xattr -cr ~/Downloads/splatoon3-boot.saver
+   ```
+   If you already installed it, run the command for where it is installed instead:
    * **If installed for this user only**:
      ```sh
      xattr -cr ~/Library/Screen\ Savers/splatoon3-boot.saver
@@ -60,9 +60,16 @@ Main features:
      sudo xattr -cr /Library/Screen\ Savers/splatoon3-boot.saver
      ```
 
+   Only do this for files from this project's releases; you can compare `shasum -a 256 splatoon3-boot.saver.zip` with the `sha256` digest shown next to the release asset.
+3. **Install**: Double-click `splatoon3-boot.saver` to install it. macOS will prompt you to choose:
+   - **Install for this user only** (Installs to `~/Library/Screen Savers/`)
+   - **Install for all users** (Installs to `/Library/Screen Savers/`, requires administrator password)
+
 4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize ink colors, palette cycling, the starting pattern, frame rate, and the battery saver.
 
    On macOS 26 and later, **Options** stops responding once you close and reopen the screen saver panel in the same System Settings session. This is a System Settings bug that affects other third-party screen savers too. Quit System Settings (⌘Q), open it again, and click **Options**.
+
+To uninstall, delete `splatoon3-boot.saver` from `~/Library/Screen Savers` (or `/Library/Screen Savers` if you installed it for all users).
 
 ## Log Feedback
 

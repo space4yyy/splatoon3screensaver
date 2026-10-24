@@ -40,6 +40,11 @@ runs on `macos-15` because Xcode 16 bundles the Metal compiler; the macOS 26
 images lack the separate Metal Toolchain (actions/runner-images#13014). The
 x86_64 slice is built but untested on Intel hardware.
 
+New releases start with `.github/release-notes.md` (install steps and the
+not-notarized notes), followed by GitHub's generated notes; add a What's new
+section by editing the release. Keep that file and the README's Getting
+Started steps in step.
+
 Xcode 26 and newer ship the Metal compiler separately. If `make` reports a
 missing Metal Toolchain, install it with
 `xcodebuild -downloadComponent MetalToolchain`.

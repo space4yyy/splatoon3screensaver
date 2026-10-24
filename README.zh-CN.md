@@ -42,12 +42,14 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
 
 1. **下载并解压**：从 [latest GitHub Release](https://github.com/space4yyy/splatoon3screensaver/releases/latest)
    下载 `splatoon3-boot.saver.zip`，解压后获得 `splatoon3-boot.saver`。
-2. **安装**：双击 `splatoon3-boot.saver` 安装。macOS 会提示选择：
-   - **仅为当前用户安装**：安装到 `~/Library/Screen Savers/`
-   - **为所有用户安装**：安装到 `/Library/Screen Savers/`，需要管理员密码
-
-3. **清除隔离标记**：由于该屏幕保护程序不是通过 Mac App Store 分发，macOS
-   Gatekeeper 可能会阻止运行。根据安装位置，在“终端”里运行对应命令：
+2. **清除隔离标记**：该屏幕保护程序只有 ad-hoc 签名，没有经过 Apple 公证。macOS
+   会给下载的文件加上隔离标记，Gatekeeper 可能因此拒绝打开它（提示 Apple 无法验证
+   其不含恶意软件），或阻止它运行（预览黑屏）。安装前请在“终端”里运行下面的命令；
+   如果解压到了别的位置，请相应修改路径：
+   ```sh
+   xattr -cr ~/Downloads/splatoon3-boot.saver
+   ```
+   如果已经安装，请改为按安装位置运行对应命令：
    - **仅为当前用户安装**：
      ```sh
      xattr -cr ~/Library/Screen\ Savers/splatoon3-boot.saver
@@ -57,12 +59,21 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
      sudo xattr -cr /Library/Screen\ Savers/splatoon3-boot.saver
      ```
 
+   请只对本项目 release 中下载的文件这样做；可以把 `shasum -a 256 splatoon3-boot.saver.zip`
+   的结果与 release 资源旁显示的 `sha256` 摘要对比。
+3. **安装**：双击 `splatoon3-boot.saver` 安装。macOS 会提示选择：
+   - **仅为当前用户安装**：安装到 `~/Library/Screen Savers/`
+   - **为所有用户安装**：安装到 `/Library/Screen Savers/`，需要管理员密码
+
 4. **选择并配置**：打开 **系统设置**，进入 **墙纸 / 屏幕保护程序**，选择
    **Splatoon 3 Boot**，点击 **选项** 调整墨水配色、历代循环、初始图案、帧率和电池省电。
 
    在 macOS 26 及更新版本中，如果在同一次打开的系统设置里关掉再重新进入屏幕保护程序
    面板，**选项** 会点不开。这是系统设置的 bug，其他第三方屏保也会遇到。退出系统设置
    （⌘Q）后重新打开，再点 **选项** 即可。
+
+卸载时，删除 `~/Library/Screen Savers`（为所有用户安装时是 `/Library/Screen Savers`）里的
+`splatoon3-boot.saver` 即可。
 
 ## 日志反馈
 

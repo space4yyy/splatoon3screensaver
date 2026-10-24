@@ -69,8 +69,9 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/splatoon3-boot.saver.zip --clobber
           else
+            # Install and notarization notes come first; generated notes follow.
             gh release create "$GITHUB_REF_NAME" dist/splatoon3-boot.saver.zip \
               --title "$GITHUB_REF_NAME" \
               --generate-notes \
-              --notes "Download splatoon3-boot.saver.zip, unzip it, then double-click splatoon3-boot.saver to install."
+              --notes-file .github/release-notes.md
           fi
