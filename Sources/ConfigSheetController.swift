@@ -118,6 +118,8 @@ final class ConfigSheetController: NSWindowController {
         for segment in 0..<fpsControl.segmentCount {
             fpsControl.setWidth(50, forSegment: segment)
         }
+        // System Settings forms use mini switches.
+        batterySwitch.controlSize = .mini
         batterySwitch.target = self
         batterySwitch.action = #selector(controlChanged)
         batterySwitch.setAccessibilityLabel(localized("Battery saver", "电池省电"))
