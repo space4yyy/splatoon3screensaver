@@ -465,6 +465,7 @@ final class ConfigSheetController: NSWindowController {
             NSColorPanel.shared.orderOut(nil)
         }
         guard let window = self.window else { return }
+        AppLog.renderer.info("Options sheet ended")
         if let parent = window.sheetParent {
             parent.endSheet(window)
         } else {

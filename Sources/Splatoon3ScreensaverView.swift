@@ -54,6 +54,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     }
 
     deinit {
+        AppLog.renderer.debug("[View \(self.instanceID, privacy: .public)] View deallocated")
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
@@ -83,6 +84,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        AppLog.renderer.debug("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] \(self.window == nil ? "Removed from" : "Added to", privacy: .public) window, size=\(self.bounds.size.debugDescription, privacy: .public)")
         if window == nil {
             if animationActive {
                 Self.abandonedAnimationTime = CACurrentMediaTime()
@@ -408,6 +410,7 @@ public final class Splatoon3ScreensaverView: ScreenSaverView {
     public override var hasConfigureSheet: Bool { true }
 
     public override var configureSheet: NSWindow? {
+        AppLog.renderer.info("[Screen \(self.screenID, privacy: .public)] [View \(self.instanceID, privacy: .public)] Options sheet requested")
         if configController?.window == nil {
             configController = ConfigSheetController()
         }

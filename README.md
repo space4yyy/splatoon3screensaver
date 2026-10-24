@@ -62,6 +62,8 @@ Main features:
 
 4. **Select & Configure**: Open **System Settings**, navigate to **Wallpapers / Screen Savers**, select **Splatoon 3 Boot**, and click **Options** to customize ink colors, palette cycling, the starting pattern, frame rate, and the battery saver.
 
+   On macOS 26 and later, **Options** stops responding once you close and reopen the screen saver panel in the same System Settings session. This is a System Settings bug that affects other third-party screen savers too. Quit System Settings (⌘Q), open it again, and click **Options**.
+
 ## Log Feedback
 
 The screensaver logs diagnostics through macOS Unified Logging.

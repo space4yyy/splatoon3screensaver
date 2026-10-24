@@ -76,6 +76,16 @@ Observed on macOS 27 through `WallpaperAgent` and `legacyScreenSaver` logs:
   it waits for display feedback the remote host stops sending.
 - Detached views must stop `ScreenSaverView`'s timer. Otherwise each one keeps
   waking the host about 60 times a second.
+- Once the screen saver panel is closed and reopened in the same System
+  Settings session, the host cannot show a legacy options sheet. Our sheet
+  begins on the legacyScreenSaver service window, but Wallpaper never mirrors
+  it (its options anchor is 97.5x16 the first time and 440x20 afterwards), and
+  the unfinished request turns later Options clicks into no-ops until System
+  Settings is relaunched. A fresh legacyScreenSaver process fails the same way
+  (tested by killing the options process after each sheet), so the module
+  cannot work around it; the README tells users to relaunch System Settings.
+  WebViewScreenSaver documents the same bug. The `Options sheet requested` and
+  `Options sheet ended` log lines show whether a request reached the module.
 - To debug, stream `WallpaperAgent` (category `screen-saver`), `Wallpaper`
   (category `settings`), and this subsystem together.
 - Avoid manually signing the outer `.saver` bundle unless crash logs
