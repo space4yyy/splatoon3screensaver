@@ -33,6 +33,13 @@ make clean
 
 There is no standalone preview app in the current project.
 
+`ARCHS` defaults to the host architecture. CI (`.github/workflows/release.yml`)
+builds every push, pull request, and `v*` tag with `ARCHS="arm64 x86_64"`,
+stamps `VERSION` from the tag, and publishes tag builds as a GitHub Release. It
+runs on `macos-15` because Xcode 16 bundles the Metal compiler; the macOS 26
+images lack the separate Metal Toolchain (actions/runner-images#13014). The
+x86_64 slice is built but untested on Intel hardware.
+
 Xcode 26 and newer ship the Metal compiler separately. If `make` reports a
 missing Metal Toolchain, install it with
 `xcodebuild -downloadComponent MetalToolchain`.

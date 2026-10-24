@@ -1,39 +1,68 @@
-name: Build Screensaver Release
+name: Build
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
-    name: Build .saver artifact
-    runs-on: macos-14
+    name: Build .saver
+    # Xcode 16 still bundles the Metal compiler. Xcode 26 and newer need the
+    # separate Metal Toolchain, which the macOS 26 images do not reliably
+    # install yet (actions/runner-images#13014).
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      # Publishing the release for v* tags.
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swiftc --version
+          xcrun -sdk macosx metal --version
 
-      - name: Build screensaver
-        run: make package
+      - name: Build universal screensaver
+        run: |
+          version=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          make package ARCHS="arm64 x86_64" VERSION="$version" BUILD_NUMBER="$GITHUB_RUN_NUMBER"
+
+      - name: Verify bundle
+        run: |
+          contents=dist/splatoon3-boot.saver/Contents
+          for arch in arm64 x86_64; do
+            lipo "$contents/MacOS/Splatoon3Screensaver" -verify_arch "$arch"
+          done
+          test -s "$contents/Resources/default.metallib"
+          plutil -lint "$contents/Info.plist"
+          plutil -p "$contents/Info.plist" | grep -E '"CFBundle(ShortVersionString|Version)"'
 
       - name: Package release zip
         run: ditto -c -k --keepParent --norsrc --noextattr dist/splatoon3-boot.saver dist/splatoon3-boot.saver.zip
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: splatoon3-boot.saver.zip
           path: dist/splatoon3-boot.saver.zip
           if-no-files-found: error
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,5 +71,6 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/splatoon3-boot.saver.zip \
               --title "$GITHUB_REF_NAME" \
+              --generate-notes \
               --notes "Download splatoon3-boot.saver.zip, unzip it, then double-click splatoon3-boot.saver to install."
           fi

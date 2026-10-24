@@ -39,9 +39,9 @@ Main features:
 
 - macOS 13 Ventura or newer.
 - A Mac with Metal support.
-- Release assets are built by GitHub Actions. If a release build does not load
-  on your Mac model or architecture, build locally from source; the default
-  Makefile builds for the architecture of the Mac running `make`.
+- Release assets are universal binaries for Apple silicon and Intel Macs,
+  built by GitHub Actions. They are tested on Apple silicon only; if a release
+  build does not load on your Mac, build locally from source.
 
 ## Getting Started
 
@@ -112,6 +112,13 @@ Build a distributable `.saver` artifact locally:
 make package
 ```
 
+Local builds target the architecture of the Mac running `make`. Releases build
+a universal binary and stamp the bundle version:
+
+```sh
+make package ARCHS="arm64 x86_64" VERSION=1.0.6
+```
+
 Install a local build for the current user:
 
 ```sh
@@ -124,7 +131,9 @@ Clean build artifacts:
 make clean
 ```
 
-Tag pushes build and upload `splatoon3-boot.saver.zip` to GitHub Releases:
+GitHub Actions builds every push to `main` and every pull request, and keeps
+`splatoon3-boot.saver.zip` as a workflow artifact. Tag pushes also publish it
+to GitHub Releases:
 
 ```sh
 git tag v1.0.0

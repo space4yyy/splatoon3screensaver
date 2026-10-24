@@ -34,9 +34,9 @@ macOS 集成层使用 `ScreenSaverView` 直接驱动 `CAMetalLayer`。这样可�
 
 - macOS 13 Ventura 或更新版本。
 - 支持 Metal 的 Mac。
-- Release 产物由 GitHub Actions 构建。如果某个 release build 无法在你的
-  Mac 型号或架构上加载，可以从源码本地构建；默认 Makefile 会按运行 `make`
-  的 Mac 架构构建。
+- Release 产物由 GitHub Actions 构建，是同时支持 Apple 芯片和 Intel 的通用
+  二进制。目前只在 Apple 芯片上测试过；如果某个 release build 无法在你的 Mac
+  上加载，可以从源码本地构建。
 
 ## 开始使用
 
@@ -108,6 +108,13 @@ make
 make package
 ```
 
+本地构建默认只针对运行 `make` 的 Mac 架构。Release 会构建通用二进制，并写入
+bundle 版本号：
+
+```sh
+make package ARCHS="arm64 x86_64" VERSION=1.0.6
+```
+
 为当前用户安装本地构建：
 
 ```sh
@@ -120,7 +127,9 @@ make install
 make clean
 ```
 
-推送 tag 后，GitHub Actions 会构建并上传 `splatoon3-boot.saver.zip` 到 GitHub Releases：
+每次推送到 `main` 和每个 pull request，GitHub Actions 都会构建，并把
+`splatoon3-boot.saver.zip` 保存为 workflow artifact。推送 tag 时还会发布到
+GitHub Releases：
 
 ```sh
 git tag v1.0.0

@@ -10,6 +10,11 @@ RESOURCES := $(CONTENTS)/Resources
 SAVER_SWIFT_SOURCES := Sources/Renderer.swift Sources/Settings.swift Sources/PowerMonitor.swift Sources/ConfigSheetController.swift Sources/Splatoon3ScreensaverView.swift
 METAL_SOURCE := Shaders/Splatoon3.metal
 MIN_MACOS := 13.0
+# Releases build ARCHS="arm64 x86_64" for a universal binary.
+ARCHS ?= $(shell uname -m)
+# Releases stamp the bundle version, e.g. VERSION=1.0.6 BUILD_NUMBER=42.
+VERSION ?=
+BUILD_NUMBER ?=
 
 .PHONY: all clean install package FORCE
 
@@ -21,18 +26,26 @@ $(BUNDLE): FORCE
 	rm -rf "$(BUILD_DIR)/module-cache"
 	@mkdir -p "$(MACOS)" "$(RESOURCES)" "$(BUILD_DIR)/module-cache"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
+	$(if $(VERSION),plutil -replace CFBundleShortVersionString -string "$(VERSION)" "$(CONTENTS)/Info.plist")
+	$(if $(BUILD_NUMBER),plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$(CONTENTS)/Info.plist")
 	cp Resources/bubble-mask.raw "$(RESOURCES)/bubble-mask.raw"
 	cp Resources/Shadertoy/seed_*.raw "$(RESOURCES)/"
 	xcrun -sdk macosx metal -std=macos-metal2.4 -mmacosx-version-min=$(MIN_MACOS) \
 		-fmodules-cache-path="$(BUILD_DIR)/module-cache" \
 		"$(METAL_SOURCE)" -o "$(RESOURCES)/default.metallib"
-	swiftc -target $(shell uname -m)-apple-macos$(MIN_MACOS) -parse-as-library -O \
-		-module-cache-path "$(BUILD_DIR)/module-cache" \
-		-emit-library -module-name $(PRODUCT) \
-		-o "$(BUILD_DIR)/$(PRODUCT).dylib" \
-		$(SAVER_SWIFT_SOURCES) \
-		-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore -framework IOKit
-	cp "$(BUILD_DIR)/$(PRODUCT).dylib" "$(MACOS)/$(PRODUCT)"
+	set -e; for arch in $(ARCHS); do \
+		swiftc -target $$arch-apple-macos$(MIN_MACOS) -parse-as-library -O -wmo \
+			-module-cache-path "$(BUILD_DIR)/module-cache" \
+			-emit-library -module-name $(PRODUCT) \
+			-o "$(BUILD_DIR)/$(PRODUCT)-$$arch.dylib" \
+			$(SAVER_SWIFT_SOURCES) \
+			-framework AppKit -framework ScreenSaver -framework Metal -framework QuartzCore -framework IOKit; \
+	done
+ifeq ($(words $(ARCHS)),1)
+	cp "$(BUILD_DIR)/$(PRODUCT)-$(ARCHS).dylib" "$(MACOS)/$(PRODUCT)"
+else
+	lipo -create $(foreach arch,$(ARCHS),"$(BUILD_DIR)/$(PRODUCT)-$(arch).dylib") -output "$(MACOS)/$(PRODUCT)"
+endif
 
 install: package
 	@mkdir -p "$$HOME/Library/Screen Savers"
